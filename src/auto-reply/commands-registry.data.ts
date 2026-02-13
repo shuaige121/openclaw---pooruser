@@ -408,6 +408,22 @@ function buildChatCommands(): ChatCommandDefinition[] {
       category: "session",
     }),
     defineChatCommand({
+      key: "recall",
+      description: "Recall a previous session's context.",
+      textAlias: "/recall",
+      acceptsArgs: true,
+      scope: "text",
+      category: "session",
+      args: [
+        {
+          name: "sessionId",
+          description: "Session ID (or prefix) to recall",
+          type: "string",
+          required: true,
+        },
+      ],
+    }),
+    defineChatCommand({
       key: "compact",
       description: "Compact the session context.",
       textAlias: "/compact",
