@@ -68,16 +68,21 @@ function coercePayload(payload: UnknownRecord) {
     next.kind = "agentTurn";
   } else if (kindRaw === "systemevent") {
     next.kind = "systemEvent";
+  } else if (kindRaw === "script") {
+    next.kind = "script";
   } else if (kindRaw) {
     next.kind = kindRaw;
   }
   if (!next.kind) {
     const hasMessage = typeof next.message === "string" && next.message.trim().length > 0;
     const hasText = typeof next.text === "string" && next.text.trim().length > 0;
+    const hasCommand = typeof next.command === "string" && next.command.trim().length > 0;
     if (hasMessage) {
       next.kind = "agentTurn";
     } else if (hasText) {
       next.kind = "systemEvent";
+    } else if (hasCommand) {
+      next.kind = "script";
     }
   }
   if (typeof next.message === "string") {
@@ -90,6 +95,36 @@ function coercePayload(payload: UnknownRecord) {
     const trimmed = next.text.trim();
     if (trimmed) {
       next.text = trimmed;
+    }
+  }
+  if (typeof next.command === "string") {
+    const trimmed = next.command.trim();
+    if (trimmed) {
+      next.command = trimmed;
+    }
+  }
+  if ("cwd" in next) {
+    if (typeof next.cwd === "string") {
+      const trimmed = next.cwd.trim();
+      if (trimmed) {
+        next.cwd = trimmed;
+      } else {
+        delete next.cwd;
+      }
+    } else {
+      delete next.cwd;
+    }
+  }
+  if ("shell" in next) {
+    if (typeof next.shell === "string") {
+      const trimmed = next.shell.trim();
+      if (trimmed) {
+        next.shell = trimmed;
+      } else {
+        delete next.shell;
+      }
+    } else {
+      delete next.shell;
     }
   }
   if ("model" in next) {
@@ -138,7 +173,7 @@ function coerceDelivery(delivery: UnknownRecord) {
     const mode = delivery.mode.trim().toLowerCase();
     if (mode === "deliver") {
       next.mode = "announce";
-    } else if (mode === "announce" || mode === "none") {
+    } else if (mode === "announce" || mode === "none" || mode === "direct" || mode === "process") {
       next.mode = mode;
     } else {
       delete next.mode;
@@ -160,6 +195,30 @@ function coerceDelivery(delivery: UnknownRecord) {
       next.to = trimmed;
     } else {
       delete next.to;
+    }
+  }
+  if ("processModel" in next) {
+    if (typeof delivery.processModel === "string") {
+      const trimmed = delivery.processModel.trim();
+      if (trimmed) {
+        next.processModel = trimmed;
+      } else {
+        delete next.processModel;
+      }
+    } else {
+      delete next.processModel;
+    }
+  }
+  if ("processPrompt" in next) {
+    if (typeof delivery.processPrompt === "string") {
+      const trimmed = delivery.processPrompt.trim();
+      if (trimmed) {
+        next.processPrompt = trimmed;
+      } else {
+        delete next.processPrompt;
+      }
+    } else {
+      delete next.processPrompt;
     }
   }
   return next;
@@ -428,7 +487,7 @@ export function normalizeCronJobInput(
       if (kind === "systemEvent") {
         next.sessionTarget = "main";
       }
-      if (kind === "agentTurn") {
+      if (kind === "agentTurn" || kind === "script") {
         next.sessionTarget = "isolated";
       }
     }

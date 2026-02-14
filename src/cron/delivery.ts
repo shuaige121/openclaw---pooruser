@@ -4,6 +4,8 @@ export type CronDeliveryPlan = {
   mode: CronDeliveryMode;
   channel: CronMessageChannel;
   to?: string;
+  processModel?: string;
+  processPrompt?: string;
   source: "delivery" | "payload";
   requested: boolean;
 };
@@ -36,11 +38,15 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
   const mode =
     normalizedMode === "announce"
       ? "announce"
-      : normalizedMode === "none"
-        ? "none"
-        : normalizedMode === "deliver"
-          ? "announce"
-          : undefined;
+      : normalizedMode === "direct"
+        ? "direct"
+        : normalizedMode === "process"
+          ? "process"
+          : normalizedMode === "none"
+            ? "none"
+            : normalizedMode === "deliver"
+              ? "announce"
+              : undefined;
 
   const payloadChannel = normalizeChannel(payload?.channel);
   const payloadTo = normalizeTo(payload?.to);
@@ -48,6 +54,12 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
     (delivery as { channel?: unknown } | undefined)?.channel,
   );
   const deliveryTo = normalizeTo((delivery as { to?: unknown } | undefined)?.to);
+  const processModel = normalizeTo(
+    (delivery as { processModel?: unknown } | undefined)?.processModel,
+  );
+  const processPrompt = normalizeTo(
+    (delivery as { processPrompt?: unknown } | undefined)?.processPrompt,
+  );
 
   const channel = deliveryChannel ?? payloadChannel ?? "last";
   const to = deliveryTo ?? payloadTo;
@@ -57,8 +69,11 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
       mode: resolvedMode,
       channel,
       to,
+      processModel,
+      processPrompt,
       source: "delivery",
-      requested: resolvedMode === "announce",
+      requested:
+        resolvedMode === "announce" || resolvedMode === "direct" || resolvedMode === "process",
     };
   }
 

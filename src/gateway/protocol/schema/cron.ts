@@ -50,6 +50,16 @@ export const CronPayloadSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
+  Type.Object(
+    {
+      kind: Type.Literal("script"),
+      command: NonEmptyString,
+      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
+      cwd: Type.Optional(Type.String()),
+      shell: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
 ]);
 
 export const CronPayloadPatchSchema = Type.Union([
@@ -75,24 +85,50 @@ export const CronPayloadPatchSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
+  Type.Object(
+    {
+      kind: Type.Literal("script"),
+      command: Type.Optional(NonEmptyString),
+      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
+      cwd: Type.Optional(Type.String()),
+      shell: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
 ]);
 
 export const CronDeliverySchema = Type.Object(
   {
-    mode: Type.Union([Type.Literal("none"), Type.Literal("announce")]),
+    mode: Type.Union([
+      Type.Literal("none"),
+      Type.Literal("direct"),
+      Type.Literal("process"),
+      Type.Literal("announce"),
+    ]),
     channel: Type.Optional(Type.Union([Type.Literal("last"), NonEmptyString])),
     to: Type.Optional(Type.String()),
     bestEffort: Type.Optional(Type.Boolean()),
+    processModel: Type.Optional(Type.String()),
+    processPrompt: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
 
 export const CronDeliveryPatchSchema = Type.Object(
   {
-    mode: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("announce")])),
+    mode: Type.Optional(
+      Type.Union([
+        Type.Literal("none"),
+        Type.Literal("direct"),
+        Type.Literal("process"),
+        Type.Literal("announce"),
+      ]),
+    ),
     channel: Type.Optional(Type.Union([Type.Literal("last"), NonEmptyString])),
     to: Type.Optional(Type.String()),
     bestEffort: Type.Optional(Type.Boolean()),
+    processModel: Type.Optional(Type.String()),
+    processPrompt: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

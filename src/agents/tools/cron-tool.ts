@@ -261,15 +261,20 @@ PAYLOAD TYPES (payload.kind):
   { "kind": "systemEvent", "text": "<message>" }
 - "agentTurn": Runs agent with message (isolated sessions only)
   { "kind": "agentTurn", "message": "<prompt>", "model": "<optional>", "thinking": "<optional>", "timeoutSeconds": <optional> }
+- "script": Runs a shell command without invoking the LLM (isolated sessions only)
+  { "kind": "script", "command": "<shell command>", "timeoutSeconds": <optional>, "cwd": "<optional>", "shell": "<optional>" }
 
 DELIVERY (isolated-only, top-level):
-  { "mode": "none|announce", "channel": "<optional>", "to": "<optional>", "bestEffort": <optional-bool> }
+  { "mode": "none|direct|process|announce", "channel": "<optional>", "to": "<optional>", "bestEffort": <optional-bool>, "processModel": "<optional>", "processPrompt": "<optional>" }
   - Default for isolated agentTurn jobs (when delivery omitted): "announce"
+  - "direct": send output directly to channel/to
+  - "process": rewrite output using processModel/processPrompt, then send directly
+  - "announce": use subagent announce flow (existing behavior)
   - If the task needs to send to a specific chat/recipient, set delivery.channel/to here; do not call messaging tools inside the run.
 
 CRITICAL CONSTRAINTS:
 - sessionTarget="main" REQUIRES payload.kind="systemEvent"
-- sessionTarget="isolated" REQUIRES payload.kind="agentTurn"
+- sessionTarget="isolated" REQUIRES payload.kind="agentTurn" or "script"
 Default: prefer isolated agentTurn jobs unless the user explicitly wants a main-session system event.
 
 WAKE MODES (for wake action):
@@ -325,6 +330,11 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
               "thinking",
               "timeoutSeconds",
               "allowUnsafeExternalContent",
+              "command",
+              "cwd",
+              "shell",
+              "processModel",
+              "processPrompt",
             ]);
             const synthetic: Record<string, unknown> = {};
             let found = false;

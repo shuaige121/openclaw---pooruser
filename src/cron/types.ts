@@ -10,13 +10,17 @@ export type CronWakeMode = "next-heartbeat" | "now";
 
 export type CronMessageChannel = ChannelId | "last";
 
-export type CronDeliveryMode = "none" | "announce";
+export type CronDeliveryMode = "none" | "direct" | "process" | "announce";
 
 export type CronDelivery = {
   mode: CronDeliveryMode;
   channel?: CronMessageChannel;
   to?: string;
   bestEffort?: boolean;
+  /** Optional model override used when mode="process". */
+  processModel?: string;
+  /** Optional instruction used when mode="process". */
+  processPrompt?: string;
 };
 
 export type CronDeliveryPatch = Partial<CronDelivery>;
@@ -35,6 +39,13 @@ export type CronPayload =
       channel?: CronMessageChannel;
       to?: string;
       bestEffortDeliver?: boolean;
+    }
+  | {
+      kind: "script";
+      command: string;
+      timeoutSeconds?: number;
+      cwd?: string;
+      shell?: string;
     };
 
 export type CronPayloadPatch =
@@ -50,6 +61,13 @@ export type CronPayloadPatch =
       channel?: CronMessageChannel;
       to?: string;
       bestEffortDeliver?: boolean;
+    }
+  | {
+      kind: "script";
+      command?: string;
+      timeoutSeconds?: number;
+      cwd?: string;
+      shell?: string;
     };
 
 export type CronJobState = {

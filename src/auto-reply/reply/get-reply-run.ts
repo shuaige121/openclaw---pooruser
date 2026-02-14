@@ -14,12 +14,15 @@ import {
   isEmbeddedPiRunStreaming,
   resolveEmbeddedSessionLane,
 } from "../../agents/pi-embedded.js";
+import { classifyQueryComplexity } from "../../agents/query-router.js";
 import {
+  loadSessionStore,
   resolveGroupSessionKey,
   resolveSessionFilePath,
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import { extractSessionPreview } from "../../config/sessions/preview.js";
 import { logVerbose } from "../../globals.js";
 import { clearCommandLane, getQueueSize } from "../../process/command-queue.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
@@ -185,7 +188,29 @@ export async function runPreparedReply(
   const inboundMetaPrompt = buildInboundMetaSystemPrompt(
     isNewSession ? sessionCtx : { ...sessionCtx, ThreadStarterBody: undefined },
   );
-  const extraSystemPrompt = [inboundMetaPrompt, groupIntro, groupSystemPrompt]
+
+  // Plan mode: inject delegation directive for complex multi-step tasks
+  let planModePrompt = "";
+  const routerCfg = agentCfg?.router;
+  if (routerCfg?.enabled) {
+    const bodyForPlan = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
+    const complexity = classifyQueryComplexity(bodyForPlan);
+    const hasMultiTask = complexity.signals.some((s) => s.startsWith("tasks:"));
+    if (hasMultiTask && complexity.score > 0.5) {
+      planModePrompt =
+        "## Task Delegation\n" +
+        "This message contains multiple sub-tasks. To save tokens and improve throughput:\n" +
+        "1. Decompose into independent sub-tasks\n" +
+        "2. Handle simple lookups/queries yourself\n" +
+        "3. Use `sessions_spawn` for each non-trivial sub-task with an appropriate model:\n" +
+        '   - Simple file ops / web search: `{ "model": "openai-codex/gpt-5.2" }`\n' +
+        '   - Code generation / analysis: `{ "model": "openai-codex/gpt-5.3-codex" }`\n' +
+        "4. Collect results and synthesize a final answer\n" +
+        "Only delegate if it genuinely saves effort; trivial tasks should be done inline.";
+    }
+  }
+
+  const extraSystemPrompt = [inboundMetaPrompt, groupIntro, groupSystemPrompt, planModePrompt]
     .filter(Boolean)
     .join("\n\n");
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
@@ -314,6 +339,25 @@ export async function runPreparedReply(
         cfg,
       });
     }
+  } else if (isNewSession && !resetTriggered && command.isAuthorizedSender && storePath) {
+    // Idle timeout triggered a new session — notify user with recent session list
+    // oxlint-disable-next-line typescript/no-explicit-any
+    const channel = ctx.OriginatingChannel || (command.channel as any);
+    const to = ctx.OriginatingTo || command.from || command.to;
+    if (channel && to) {
+      const notification = buildIdleResetNotification(storePath, sessionKey);
+      if (notification) {
+        await routeReply({
+          payload: { text: notification },
+          channel,
+          to,
+          sessionKey,
+          accountId: ctx.AccountId,
+          threadId: ctx.MessageThreadId,
+          cfg,
+        });
+      }
+    }
   }
   const sessionIdFinal = sessionId ?? crypto.randomUUID();
   const sessionFile = resolveSessionFilePath(sessionIdFinal, sessionEntry);
@@ -432,4 +476,67 @@ export async function runPreparedReply(
     shouldInjectGroupIntro,
     typingMode,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Idle-reset session list notification (code-generated, no LLM involved)
+// ---------------------------------------------------------------------------
+
+const MAX_RECENT_SESSIONS_IN_NOTIFICATION = 5;
+
+function buildIdleResetNotification(storePath: string, currentSessionKey: string): string | null {
+  let store: Record<string, SessionEntry>;
+  try {
+    store = loadSessionStore(storePath);
+  } catch {
+    return null;
+  }
+
+  // Collect recent sessions, excluding the current one
+  const entries = Object.entries(store)
+    .filter(([key, entry]) => key !== currentSessionKey && entry?.sessionId)
+    .map(([_key, entry]) => entry)
+    .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, MAX_RECENT_SESSIONS_IN_NOTIFICATION);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const lines: string[] = ["📋 New session started (idle timeout)", "", "Recent sessions:"];
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const shortId = entry.sessionId.slice(0, 8);
+    const ago = formatTimeAgo(entry.updatedAt);
+    const channel = entry.lastChannel ?? entry.channel ?? "";
+    const transcriptPath = resolveSessionFilePath(entry.sessionId, entry);
+    const preview = extractSessionPreview(transcriptPath);
+    const channelLabel = channel ? ` · ${channel}` : "";
+    lines.push(`${i + 1}. [${shortId}]  ${ago}${channelLabel} · "${preview}"`);
+  }
+
+  lines.push("", "Reply /recall <session-id> to restore a previous conversation.");
+
+  return lines.join("\n");
+}
+
+function formatTimeAgo(timestamp: number | undefined): string {
+  if (!timestamp) {
+    return "unknown";
+  }
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) {
+    return "just now";
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }

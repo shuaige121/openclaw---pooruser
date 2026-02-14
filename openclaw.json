@@ -42,12 +42,46 @@
       },
       "workspace": "/home/leonard/.openclaw/workspace",
       "compaction": {
-        "mode": "safeguard"
+        "mode": "safeguard",
+        "maxHistoryShare": 0.3,
+        "reserveTokensFloor": 30000,
+        "contextPruning": {
+          "mode": "cache-ttl",
+          "ttl": "3m",
+          "keepLastAssistants": 2,
+          "minPrunableToolChars": 15000
+        }
       },
-      "maxConcurrent": 4,
+      "router": {
+        "enabled": true,
+        "tiers": {
+          "fast": {
+            "models": ["openai-codex/gpt-5.2"],
+            "maxComplexity": 0.3
+          },
+          "balanced": {
+            "models": ["openai-codex/gpt-5.3-codex"],
+            "maxComplexity": 0.65
+          },
+          "capable": {
+            "models": ["google-antigravity/claude-opus-4-6-thinking"]
+          }
+        },
+        "tokenBudget": {
+          "daily": 500000,
+          "perSession": 100000,
+          "warningThreshold": 0.8,
+          "onExceeded": "downgrade"
+        },
+        "overrides": {
+          "mediaAlwaysCapable": true,
+          "codeAlwaysBalanced": true
+        }
+      },
+      "maxConcurrent": 2,
       "subagents": {
-        "maxConcurrent": 4,
-        "model": "openai-codex/gpt-5.3-codex"
+        "maxConcurrent": 2,
+        "model": "openai-codex/gpt-5.2"
       }
     },
     "list": [
@@ -55,6 +89,9 @@
         "id": "owner",
         "name": "Owner",
         "workspace": "/home/leonard/.openclaw/workspace",
+        "model": {
+          "primary": "google-antigravity/claude-opus-4-6-thinking"
+        },
         "tools": {
           "profile": "full"
         }
@@ -63,84 +100,62 @@
         "id": "family",
         "name": "Family",
         "workspace": "/home/leonard/.openclaw/workspace/workspaces/family",
+        "model": {
+          "primary": "openai-codex/gpt-5.2"
+        },
         "tools": {
           "profile": "messaging",
-          "deny": [
-            "exec",
-            "gateway",
-            "gateway.*"
-          ]
+          "deny": ["exec", "gateway", "gateway.*"]
         }
       },
       {
         "id": "parents",
         "name": "Parents",
         "workspace": "/home/leonard/.openclaw/workspace/workspaces/parents",
+        "model": {
+          "primary": "openai-codex/gpt-5.2"
+        },
         "tools": {
           "profile": "messaging",
-          "deny": [
-            "exec",
-            "gateway",
-            "gateway.*"
-          ]
+          "deny": ["exec", "gateway", "gateway.*"]
         }
       },
       {
         "id": "maple-education",
         "name": "Maple Education",
         "workspace": "/home/leonard/.openclaw/workspace/workspaces/Maple Education",
+        "model": {
+          "primary": "openai-codex/gpt-5.2"
+        },
         "tools": {
           "profile": "messaging",
-          "alsoAllow": [
-            "read",
-            "write",
-            "edit",
-            "web_fetch",
-            "web_search",
-            "image"
-          ],
-          "deny": [
-            "exec",
-            "gateway",
-            "gateway.*"
-          ]
+          "alsoAllow": ["read", "write", "edit", "web_fetch", "web_search", "image"],
+          "deny": ["exec", "gateway", "gateway.*"]
         }
       },
       {
         "id": "friend",
         "name": "Friend",
         "workspace": "/home/leonard/.openclaw/workspace/workspaces/public",
+        "model": {
+          "primary": "openai-codex/gpt-5.2"
+        },
         "tools": {
           "profile": "minimal",
-          "deny": [
-            "exec",
-            "gateway",
-            "gateway.*",
-            "read",
-            "write",
-            "edit"
-          ]
+          "deny": ["exec", "gateway", "gateway.*", "read", "write", "edit"]
         }
       },
       {
         "id": "duduxiang-boss",
         "name": "DuDuXiang Boss",
         "workspace": "/home/leonard/.openclaw/workspace/workspaces/duduxiang-boss",
+        "model": {
+          "primary": "openai-codex/gpt-5.2"
+        },
         "tools": {
           "profile": "messaging",
-          "alsoAllow": [
-            "read",
-            "write",
-            "edit",
-            "exec",
-            "web_fetch",
-            "web_search",
-            "browser"
-          ],
-          "deny": [
-            "gateway",
-            "gateway.*"
-          ]
+          "alsoAllow": ["read", "write", "edit", "exec", "web_fetch", "web_search", "browser"],
+          "deny": ["gateway", "gateway.*"]
         }
       }
     ]
@@ -310,6 +325,16 @@
           "id": "+6591726303"
         }
       }
+    },
+    {
+      "agentId": "owner",
+      "match": {
+        "channel": "telegram",
+        "peer": {
+          "kind": "dm",
+          "id": "7624953278"
+        }
+      }
     }
   ],
   "messages": {
@@ -318,6 +343,10 @@
   "commands": {
     "native": "auto",
     "nativeSkills": "auto"
+  },
+  "cron": {
+    "enabled": true,
+    "maxConcurrentRuns": 2
   },
   "hooks": {
     "internal": {
@@ -363,10 +392,7 @@
       "enabled": true,
       "dmPolicy": "allowlist",
       "botToken": "8288144735:AAGPWA5SB8RQDWGAir1kBS9EFd3W7jPESco",
-      "allowFrom": [
-        "7624953278",
-        "5533296808"
-      ],
+      "allowFrom": ["7624953278", "5533296808"],
       "groupPolicy": "allowlist",
       "streamMode": "partial"
     },

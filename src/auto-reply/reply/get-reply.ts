@@ -7,6 +7,7 @@ import {
   resolveAgentSkillsFilter,
 } from "../../agents/agent-scope.js";
 import { resolveModelRefFromString } from "../../agents/model-selection.js";
+import { routeQuery } from "../../agents/query-router.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { DEFAULT_AGENT_WORKSPACE_DIR, ensureAgentWorkspace } from "../../agents/workspace.js";
 import { type OpenClawConfig, loadConfig } from "../../config/config.js";
@@ -48,6 +49,33 @@ function mergeSkillFilters(channelFilter?: string[], agentFilter?: string[]): st
   }
   const agentSet = new Set(agent);
   return channel.filter((name) => agentSet.has(name));
+}
+
+function estimateDailyTokensFromSessionStore(
+  store?: Record<string, { totalTokens?: number; updatedAt?: number }>,
+): number | undefined {
+  if (!store) {
+    return undefined;
+  }
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const dayStartMs = startOfDay.getTime();
+  let total = 0;
+  let sawAny = false;
+  for (const entry of Object.values(store)) {
+    if (!entry || typeof entry.updatedAt !== "number" || entry.updatedAt < dayStartMs) {
+      continue;
+    }
+    if (typeof entry.totalTokens !== "number" || !Number.isFinite(entry.totalTokens)) {
+      continue;
+    }
+    if (entry.totalTokens <= 0) {
+      continue;
+    }
+    total += entry.totalTokens;
+    sawAny = true;
+  }
+  return sawAny ? total : undefined;
 }
 
 export async function getReplyFromConfig(
@@ -97,6 +125,10 @@ export async function getReplyFromConfig(
       hasResolvedHeartbeatModelOverride = true;
     }
   }
+
+  // Smart router is applied once after session state is available (below),
+  // so that token budget caps have access to sessionTotalTokens / dailyTotalTokens.
+  const routerCfg = agentCfg?.router;
 
   const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, agentId) ?? DEFAULT_AGENT_WORKSPACE_DIR;
   const workspace = await ensureAgentWorkspace({
@@ -164,7 +196,7 @@ export async function getReplyFromConfig(
     bodyStripped,
   } = sessionState;
 
-  await applyResetModelOverride({
+  const resetModelResult = await applyResetModelOverride({
     cfg,
     resetTriggered,
     bodyStripped,
@@ -178,6 +210,29 @@ export async function getReplyFromConfig(
     defaultModel,
     aliasIndex,
   });
+
+  if (routerCfg?.enabled && !hasResolvedHeartbeatModelOverride && !resetModelResult.selection) {
+    const bodyForRouter = finalized.BodyForAgent ?? finalized.Body ?? "";
+    const hasMedia = !!(
+      finalized.MediaPath ||
+      (finalized.MediaPaths && finalized.MediaPaths.length > 0)
+    );
+    const conversationDepth = finalized.InboundHistory?.length ?? 0;
+    const routed = routeQuery({
+      cfg,
+      message: bodyForRouter,
+      hasMedia,
+      conversationDepth,
+      sessionTotalTokens: sessionEntry?.totalTokens,
+      dailyTotalTokens: estimateDailyTokensFromSessionStore(sessionStore),
+      currentProvider: provider,
+      currentModel: model,
+    });
+    if (routed) {
+      provider = routed.provider;
+      model = routed.model;
+    }
+  }
 
   const directiveResult = await resolveReplyDirectives({
     ctx: finalized,

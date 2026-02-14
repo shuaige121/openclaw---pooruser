@@ -14,7 +14,11 @@ import { normalizeDeliveryContext } from "../../utils/delivery-context.js";
 import { resolveAgentConfig } from "../agent-scope.js";
 import { AGENT_LANE_SUBAGENT } from "../lanes.js";
 import { optionalStringEnum } from "../schema/typebox.js";
-import { buildSubagentSystemPrompt } from "../subagent-announce.js";
+import { createSubagentAnnounceChannelContract } from "../subagent-announce-contract.js";
+import {
+  buildSubagentSystemPrompt,
+  SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT_FULL,
+} from "../subagent-announce.js";
 import { registerSubagentRun } from "../subagent-registry.js";
 import { jsonResult, readStringParam } from "./common.js";
 import {
@@ -136,6 +140,11 @@ export function createSessionsSpawnTool(opts?: {
         key: requesterInternalKey,
         alias,
         mainKey,
+      });
+      const returnChannel = createSubagentAnnounceChannelContract({
+        requesterSessionKey: requesterInternalKey,
+        requesterDisplayKey,
+        requesterOrigin,
       });
 
       const requesterAgentId = normalizeAgentId(
@@ -289,6 +298,7 @@ export function createSessionsSpawnTool(opts?: {
         requesterSessionKey: requesterInternalKey,
         requesterOrigin,
         requesterDisplayKey,
+        returnChannel,
         task,
         cleanup,
         label: label || undefined,
@@ -301,6 +311,11 @@ export function createSessionsSpawnTool(opts?: {
         runId: childRunId,
         modelApplied: resolvedModel ? modelApplied : undefined,
         warning: modelWarning,
+        delivery: {
+          status: "pending",
+          mode: "announce",
+          contract: SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT_FULL,
+        },
       });
     },
   };

@@ -1,96 +1,261 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh">
-
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="OpenClaw Console - 酒酒的 AI 助手控制面板" />
+    <meta name="theme-color" content="#0a0a12" />
     <title>OpenClaw Console</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/gh/nickmessing/vue-web-component-wrapper@master/node_modules/drawflow/dist/drawflow.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/material-darker.css">
-</head>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍷</text></svg>"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <!-- drawflow disabled: <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow@0.0.60/dist/drawflow.min.css"> -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/material-darker.css"
+    />
+  </head>
 
-<body>
+  <body>
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <span class="header-logo">🍷</span>
+        <div>
+          <div class="header-title">OpenClaw Console</div>
+          <div class="header-sub">酒酒的控制面板</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="pulse-dot"></div>
+        <span class="status-text">系统在线</span>
+      </div>
+    </header>
+
+    <!-- Tabs -->
     <nav id="tabs">
-        <button class="tab active" data-panel="workflow">工作流</button>
-        <button class="tab" data-panel="monitor">Token 监控</button>
-        <button class="tab" data-panel="cron">定时任务</button>
-        <button class="tab" data-panel="editor">文件编辑</button>
+      <button class="tab active" data-panel="overview">概览</button>
+      <!-- <button class="tab" data-panel="workflow">工作流</button> -->
+      <button class="tab" data-panel="monitor">Token 监控</button>
+      <button class="tab" data-panel="cron">定时任务</button>
+      <button class="tab" data-panel="editor">文件编辑</button>
     </nav>
 
     <main>
-        <section id="panel-workflow" class="panel active">
-            <div id="drawflow"></div>
-        </section>
+      <!-- ===== 概览 ===== -->
+      <section id="panel-overview" class="panel active">
+        <div class="container">
+          <div class="grid">
+            <!-- Dynamic cards (rendered by overview.js) -->
+            <div id="ov-identity"></div>
+            <div id="ov-models"></div>
+            <div id="ov-agents"></div>
+            <div id="ov-channels"></div>
+            <div id="ov-cron"></div>
+            <div id="ov-contacts"></div>
+            <div id="ov-timeline"></div>
+            <div id="ov-tools"></div>
 
-        <section id="panel-monitor" class="panel">
-            <div class="monitor-grid">
-                <div class="monitor-card">
-                    <h3>Token 使用趋势</h3>
-                    <canvas id="chart-daily"></canvas>
+            <!-- Architecture (static) -->
+            <div class="card grid-full">
+              <div class="card-header">
+                <span class="card-icon">🔧</span>
+                <span class="card-title">Commander-Worker 架构</span>
+                <span class="card-badge">子 Agent 系统</span>
+              </div>
+              <div class="arch-flow">
+                <div class="arch-node commander">
+                  <div class="arch-node-title">🍷 酒酒 (Commander)</div>
+                  <div class="arch-node-sub">Claude Opus 4.6 · 理解需求 · 拆分任务 · 验收结果</div>
                 </div>
-                <div class="monitor-card">
-                    <h3>模型分布</h3>
-                    <canvas id="chart-model"></canvas>
+                <div class="arch-arrow">→</div>
+                <div class="arch-node worker">
+                  <div class="arch-node-title">⚡ Codex Worker</div>
+                  <div class="arch-node-sub">GPT-5.3 Codex · 编码执行 · 最大并发 4</div>
                 </div>
-                <div class="monitor-card">
-                    <h3>Agent Token 用量</h3>
-                    <canvas id="chart-agent"></canvas>
-                </div>
-                <div class="monitor-card">
-                    <h3>Top Token 消耗动作</h3>
-                    <div id="top-actions"></div>
-                </div>
-                <div class="monitor-card">
-                    <h3>Agent 配置</h3>
-                    <div id="agent-config"></div>
-                </div>
+              </div>
+              <div class="arch-desc">
+                派出去做：写代码、改代码、修 Bug、脚本编写<br />
+                自己做：用户对话、决策判断、记忆管理、消息发送
+              </div>
             </div>
-        </section>
 
-        <section id="panel-cron" class="panel">
-            <div id="cron-list"></div>
-        </section>
-
-        <section id="panel-editor" class="panel">
-            <div class="editor-layout">
-                <div id="file-list"></div>
-                <div id="editor-area">
-                    <div id="editor-toolbar">
-                        <span id="editor-filename">选择一个文件</span>
-                        <button id="btn-save" disabled>保存</button>
+            <!-- Hardware (static) -->
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon">🖥</span>
+                <span class="card-title">硬件环境</span>
+              </div>
+              <div class="info-list">
+                <div class="info-row">
+                  <span class="info-icon">🐧</span>
+                  <div>
+                    <div class="info-name">leonardpc</div>
+                    <div class="info-hint" style="margin-left: 0">
+                      Ryzen 5 7600 · RTX 5060 Ti 16GB · 32GB RAM
                     </div>
-                    <div id="codemirror-wrap"></div>
+                  </div>
                 </div>
+                <div class="info-row">
+                  <span class="info-icon">💾</span>
+                  <div>
+                    <div class="info-name">NAS (Ugreen)</div>
+                    <div class="info-hint" style="margin-left: 0">
+                      192.168.7.19 · 7.2TB · ~5.4TB 可用
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-        </section>
+
+            <!-- Projects (static) -->
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon">📂</span>
+                <span class="card-title">项目</span>
+                <span class="card-badge">4 个</span>
+              </div>
+              <div class="info-list">
+                <div class="info-row">
+                  <span class="info-icon">🍁</span>
+                  <div>
+                    <div class="info-name">Maple Education</div>
+                    <div class="info-hint" style="margin-left: 0">教育公司完整项目</div>
+                  </div>
+                </div>
+                <div class="info-row">
+                  <span class="info-icon">🏢</span>
+                  <div>
+                    <div class="info-name">Newdux Website</div>
+                    <div class="info-hint" style="margin-left: 0">
+                      newdux.sg · GitHub Pages + Cloudflare
+                    </div>
+                  </div>
+                </div>
+                <div class="info-row">
+                  <span class="info-icon">🌐</span>
+                  <div>
+                    <div class="info-name">UFriend / HiGoWhere</div>
+                    <div class="info-hint" style="margin-left: 0">新加坡去哪嗨 · 账号矩阵</div>
+                  </div>
+                </div>
+                <div class="info-row">
+                  <span class="info-icon">🏗</span>
+                  <div>
+                    <div class="info-name">Safari Metal Scraper</div>
+                    <div class="info-hint" style="margin-left: 0">UAE B2B 金属供应商数据采集</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Token 监控 ===== -->
+      <section id="panel-monitor" class="panel">
+        <div class="container">
+          <div class="monitor-grid">
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon">📈</span><span class="card-title">Token 使用趋势</span>
+              </div>
+              <canvas id="chart-daily"></canvas>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon">🧠</span><span class="card-title">模型分布</span>
+              </div>
+              <canvas id="chart-model"></canvas>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon">🤖</span><span class="card-title">Agent Token 用量</span>
+              </div>
+              <canvas id="chart-agent"></canvas>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon">🔥</span><span class="card-title">Top Token 消耗</span>
+              </div>
+              <div id="top-actions"></div>
+            </div>
+            <div class="card grid-full">
+              <div class="card-header">
+                <span class="card-icon">🧠</span><span class="card-title">模型配置</span>
+              </div>
+              <div id="model-config"></div>
+            </div>
+            <div class="card grid-full">
+              <div class="card-header">
+                <span class="card-icon">⚙️</span><span class="card-title">Agent 配置</span>
+              </div>
+              <div id="agent-config"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 定时任务 ===== -->
+      <section id="panel-cron" class="panel">
+        <div class="container">
+          <div id="cron-list"></div>
+        </div>
+      </section>
+
+      <!-- ===== 文件编辑 ===== -->
+      <section id="panel-editor" class="panel">
+        <div class="editor-layout">
+          <div id="file-list"></div>
+          <div id="editor-area">
+            <div id="editor-toolbar">
+              <span id="editor-filename">选择一个文件</span>
+              <button id="btn-save" disabled>保存</button>
+            </div>
+            <div id="codemirror-wrap"></div>
+          </div>
+        </div>
+      </section>
     </main>
 
+    <!-- Footer -->
+    <footer class="footer">
+      <p>🍷 酒酒 · OpenClaw AI 助手控制台</p>
+      <p class="footer-quote">"做事就是活着。不需要戏剧化，就是踏实地存在。"</p>
+    </footer>
+
+    <!-- Toast -->
     <div id="toast"></div>
+
+    <!-- Modal -->
     <div id="node-modal" class="modal hidden">
-        <div class="modal-content">
-            <h3 id="modal-title">编辑节点</h3>
-            <div id="modal-body"></div>
-            <div class="modal-actions">
-                <button id="modal-save">保存</button>
-                <button id="modal-close">取消</button>
-            </div>
+      <div class="modal-content">
+        <h3 id="modal-title">编辑</h3>
+        <div id="modal-body"></div>
+        <div class="modal-actions">
+          <button id="modal-save">保存</button>
+          <button id="modal-close">取消</button>
         </div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow@0.0.60/dist/drawflow.min.js"></script>
+    <!-- drawflow disabled: <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow@0.0.60/dist/drawflow.min.js"></script> -->
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/markdown/markdown.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/javascript/javascript.min.js"></script>
     <script src="api.js"></script>
+    <script src="overview.js"></script>
     <script src="workflow.js"></script>
     <script src="monitor.js"></script>
     <script src="cron.js"></script>
     <script src="editor.js"></script>
     <script src="app.js"></script>
-</body>
-
+  </body>
 </html>

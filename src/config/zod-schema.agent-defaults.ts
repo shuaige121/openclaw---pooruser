@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AgentToolsSchema,
   HeartbeatSchema,
   MemorySearchSchema,
   SandboxBrowserSchema,
@@ -12,6 +13,46 @@ import {
   CliBackendSchema,
   HumanDelaySchema,
 } from "./zod-schema.core.js";
+
+const QueryRouterTierSchema = z
+  .object({
+    models: z.array(z.string()),
+    maxComplexity: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
+const QueryRouterSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    tiers: z
+      .object({
+        fast: QueryRouterTierSchema.optional(),
+        balanced: QueryRouterTierSchema.optional(),
+        capable: QueryRouterTierSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    tokenBudget: z
+      .object({
+        daily: z.number().int().positive().optional(),
+        perSession: z.number().int().positive().optional(),
+        warningThreshold: z.number().min(0).max(1).optional(),
+        onExceeded: z
+          .union([z.literal("downgrade"), z.literal("block"), z.literal("warn")])
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    overrides: z
+      .object({
+        mediaAlwaysCapable: z.boolean().optional(),
+        codeAlwaysBalanced: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .optional();
 
 export const AgentDefaultsSchema = z
   .object({
@@ -54,7 +95,9 @@ export const AgentDefaultsSchema = z
     envelopeElapsed: z.union([z.literal("on"), z.literal("off")]).optional(),
     contextTokens: z.number().int().positive().optional(),
     cliBackends: z.record(z.string(), CliBackendSchema).optional(),
+    tools: AgentToolsSchema,
     memorySearch: MemorySearchSchema,
+    router: QueryRouterSchema,
     contextPruning: z
       .object({
         mode: z.union([z.literal("off"), z.literal("cache-ttl")]).optional(),

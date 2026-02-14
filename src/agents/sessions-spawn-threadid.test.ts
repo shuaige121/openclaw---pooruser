@@ -75,6 +75,11 @@ describe("sessions_spawn requesterOrigin threading", () => {
       to: "telegram:123",
       threadId: 42,
     });
+    expect(runs[0]?.returnChannel?.requesterOrigin).toMatchObject({
+      channel: "telegram",
+      to: "telegram:123",
+      threadId: 42,
+    });
   });
 
   it("stores requesterOrigin without threadId when none is provided", async () => {
@@ -95,5 +100,6 @@ describe("sessions_spawn requesterOrigin threading", () => {
     const runs = listSubagentRunsForRequester("main");
     expect(runs).toHaveLength(1);
     expect(runs[0]?.requesterOrigin?.threadId).toBeUndefined();
+    expect(runs[0]?.returnChannel?.requesterOrigin?.threadId).toBeUndefined();
   });
 });

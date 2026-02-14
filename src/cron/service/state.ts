@@ -1,3 +1,5 @@
+import type { CliDeps } from "../../cli/deps.js";
+import type { OpenClawConfig } from "../../config/config.js";
 import type { CronConfig } from "../../config/types.cron.js";
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob, CronJobCreate, CronJobPatch, CronStoreFile } from "../types.js";
@@ -38,6 +40,19 @@ export type CronServiceDeps = {
   enqueueSystemEvent: (text: string, opts?: { agentId?: string }) => void;
   requestHeartbeatNow: (opts?: { reason?: string }) => void;
   runHeartbeatOnce?: (opts?: { reason?: string }) => Promise<HeartbeatRunResult>;
+  /**
+   * Runtime config resolver used by cron script jobs that need outbound delivery.
+   * Optional to keep unit tests and non-gateway embeddings lightweight.
+   */
+  resolveCronAgentRuntime?: (requestedAgentId?: string | null) => {
+    agentId: string;
+    cfg: OpenClawConfig;
+  };
+  /**
+   * Outbound sender dependencies used by cron script job delivery.
+   * Optional because some embeddings run cron without outbound channels.
+   */
+  outboundCliDeps?: CliDeps;
   runIsolatedAgentJob: (params: { job: CronJob; message: string }) => Promise<{
     status: "ok" | "error" | "skipped";
     summary?: string;

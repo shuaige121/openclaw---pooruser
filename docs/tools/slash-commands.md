@@ -91,6 +91,7 @@ Text + native (when enabled):
 - `/activation mention|always` (groups only)
 - `/send on|off|inherit` (owner-only)
 - `/reset` or `/new [model]` (optional model hint; remainder is passed through)
+- `/recall <session-id>` (restore recent context from a previous session into the current transcript)
 - `/think <off|minimal|low|medium|high|xhigh>` (dynamic choices by model/provider; aliases: `/thinking`, `/t`)
 - `/verbose on|full|off` (alias: `/v`)
 - `/reasoning on|off|stream` (alias: `/reason`; when on, sends a separate message prefixed `Reasoning:`; `stream` = Telegram draft only)

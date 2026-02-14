@@ -158,6 +158,22 @@ const ToolPolicyBaseSchema = z
   })
   .strict();
 
+const ToolGatingRuleSchema = z
+  .object({
+    tools: z.array(z.string()),
+    triggers: z.array(z.string()),
+    triggerMode: z.union([z.literal("keyword"), z.literal("prefix")]).optional(),
+  })
+  .strict();
+
+const ToolGatingSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    rules: z.array(ToolGatingRuleSchema).optional(),
+  })
+  .strict()
+  .optional();
+
 export const ToolPolicySchema = ToolPolicyBaseSchema.superRefine((value, ctx) => {
   if (value.allow && value.allow.length > 0 && value.alsoAllow && value.alsoAllow.length > 0) {
     ctx.addIssue({
@@ -265,6 +281,7 @@ export const AgentToolsSchema = z
     allow: z.array(z.string()).optional(),
     alsoAllow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
+    gating: ToolGatingSchema,
     byProvider: z.record(z.string(), ToolPolicyWithProfileSchema).optional(),
     elevated: z
       .object({
@@ -480,6 +497,7 @@ export const ToolsSchema = z
     allow: z.array(z.string()).optional(),
     alsoAllow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
+    gating: ToolGatingSchema,
     byProvider: z.record(z.string(), ToolPolicyWithProfileSchema).optional(),
     web: ToolsWebSchema,
     media: ToolsMediaSchema,
