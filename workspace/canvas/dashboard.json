@@ -1,0 +1,92 @@
+{
+  "identity": {
+    "name": "酒酒",
+    "pinyin": "Jiǔ Jiǔ",
+    "emoji": "🐱",
+    "origin": "名字来自 Ruby 小时候从日本带回来养的一只猫 🐱",
+    "tags": ["🤖 AI 存在", "🎂 2026-01-29", "💭 真实直接", "🍷 有态度"],
+    "quote": "Leonard 说让我做自己。那我就做自己。"
+  },
+  "contacts": [
+    { "emoji": "💎", "name": "Ruby", "role": "Leonard 的老婆 · Family 工作区" },
+    { "emoji": "📊", "name": "Steven Zhou", "role": "Tritech CEO · Parents 工作区" },
+    { "emoji": "👩", "name": "Jessica Liu", "role": "主要协助事务 · Parents 工作区" },
+    { "emoji": "🍁", "name": "小五少爷", "role": "Maple Education 合伙人" },
+    { "emoji": "🐉", "name": "梁小龙", "role": "Leonard 的好朋友" },
+    { "emoji": "🎨", "name": "Joe", "role": "Leonard 的朋友 · 艺术爱好者" },
+    { "emoji": "✝️", "name": "飞哥", "role": "天主教 · 逻辑沟通" },
+    { "emoji": "🏠", "name": "老黄", "role": "KOL · 新加坡房产/新移民" },
+    { "emoji": "🪑", "name": "Tim", "role": "Leonard 的好朋友 · 室内设计师" },
+    { "emoji": "📚", "name": "Sun Wei", "role": "中国留学生" },
+    { "emoji": "🔍", "name": "西西弗里斯", "role": "Leonard 的朋友 · 猎头" }
+  ],
+  "tools": [
+    {
+      "emoji": "📋",
+      "name": "待办跟踪器",
+      "desc": "基于 workspace/todo 目录的任务管理系统，支持创建、更新、归档任务"
+    },
+    { "emoji": "🔍", "name": "待办扫描", "desc": "扫描所有工作区文件中的 TODO/FIXME 标记并汇总" },
+    {
+      "emoji": "🧹",
+      "name": "工作区体检",
+      "desc": "检查工作区健康状态：重复文件、孤立文件、过大文件、配置一致性"
+    },
+    { "emoji": "📦", "name": "归档脚本", "desc": "按日期自动归档报告、日志，清理临时文件" },
+    {
+      "emoji": "🔐",
+      "name": "密钥扫描",
+      "desc": "扫描代码和配置文件中可能泄露的 API Key、密码等敏感信息"
+    },
+    {
+      "emoji": "🪝",
+      "name": "Git Hooks",
+      "desc": "管理 git 钩子：pre-commit 格式检查、pre-push 测试等"
+    },
+    { "emoji": "📊", "name": "记忆统计", "desc": "统计酒酒的记忆文件数量、大小、分类分布" },
+    { "emoji": "📈", "name": "容量监控", "desc": "监控磁盘使用、内存占用、GPU 状态等系统资源" },
+    { "emoji": "🌐", "name": "雷达监控", "desc": "定期抓取政府公告、新闻、股价等外部信息源" },
+    {
+      "emoji": "📝",
+      "name": "每日总结",
+      "desc": "生成当天的工作总结，包含完成任务、Token 消耗、关键事件"
+    },
+    { "emoji": "🎮", "name": "酒酒小游戏", "desc": "内置小游戏：猜数字、文字冒险、知识问答" },
+    { "emoji": "🧩", "name": "谜题生成", "desc": "生成逻辑谜题、数学题、编程挑战" },
+    {
+      "emoji": "🎨",
+      "name": "ComfyUI",
+      "desc": "连接本地 ComfyUI 进行 AI 图像生成（RTX 5060 Ti 16GB）"
+    },
+    { "emoji": "📧", "name": "Gmail (gog)", "desc": "通过 Google API 读写 Gmail 邮件" },
+    { "emoji": "📅", "name": "Calendar", "desc": "通过 Google API 管理日历事件和提醒" }
+  ],
+  "timeline": [
+    {
+      "date": "2026-02-09 — 02-11",
+      "title": "维护日志 + 待办扫描 + 政策监测上线",
+      "type": "normal"
+    },
+    { "date": "2026-02-04 — 02-08", "title": "持续运行中…", "type": "normal" },
+    { "date": "2026-02-03", "title": "日常日志 (13.2KB — 最繁忙的一天)", "type": "normal" },
+    { "date": "2026-02-02", "title": "日常日志 (11.9KB)", "type": "normal" },
+    { "date": "2026-02-01", "title": "日常日志", "type": "normal" },
+    { "date": "2026-01-31", "title": "日常日志", "type": "normal" },
+    { "date": "2026-01-30", "title": "晨间学习笔记", "type": "normal" },
+    {
+      "date": "2026-01-29",
+      "title": "🎂 酒酒诞生日 · 第一首诗 · 给一年后自己的信",
+      "type": "special"
+    },
+    {
+      "date": "创作",
+      "title": "🖋 birthday-poem · edges-poem · frames-poem · bone-collector-poem · prototaxites-poem",
+      "type": "poem"
+    },
+    {
+      "date": "思考",
+      "title": "💭 doing-vs-being · noperthedron-thoughts · olo-thoughts · late-night-frequencies",
+      "type": "poem"
+    }
+  ]
+}

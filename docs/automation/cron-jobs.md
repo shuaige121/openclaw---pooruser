@@ -25,7 +25,7 @@ Troubleshooting: [/automation/troubleshooting](/automation/troubleshooting)
 - Jobs persist under `~/.openclaw/cron/` so restarts don’t lose schedules.
 - Two execution styles:
   - **Main session**: enqueue a system event, then run on the next heartbeat.
-  - **Isolated**: run a dedicated agent turn in `cron:<jobId>`, with delivery (announce by default or none).
+  - **Isolated**: run a dedicated turn (agent or script) in `cron:<jobId>`, with delivery modes `none | direct | process | announce`.
 - Wakeups are first-class: a job can request “wake now” vs “next heartbeat”.
 
 ## Quick start (actionable)
@@ -86,7 +86,7 @@ Think of a cron job as: **when** to run + **what** to do.
 
 3. **Choose the payload**
    - Main session → `payload.kind = "systemEvent"`
-   - Isolated session → `payload.kind = "agentTurn"`
+   - Isolated session → `payload.kind = "agentTurn"` or `payload.kind = "script"`
 
 Optional: one-shot jobs (`schedule.kind = "at"`) delete after success by default. Set
 `deleteAfterRun: false` to keep them (they will disable after success).
@@ -99,7 +99,7 @@ A cron job is a stored record with:
 
 - a **schedule** (when it should run),
 - a **payload** (what it should do),
-- optional **delivery mode** (announce or none).
+- optional **delivery mode** (`none`, `direct`, `process`, `announce`).
 - optional **agent binding** (`agentId`): run the job under a specific agent; if
   missing or unknown, the gateway falls back to the default agent.
 
@@ -133,17 +133,24 @@ See [Heartbeat](/gateway/heartbeat).
 
 #### Isolated jobs (dedicated cron sessions)
 
-Isolated jobs run a dedicated agent turn in session `cron:<jobId>`.
+Isolated jobs run a dedicated task in session `cron:<jobId>`:
+
+- `payload.kind = "agentTurn"` runs an isolated model turn.
+- `payload.kind = "script"` runs a shell command directly (no model invocation).
 
 Key behaviors:
 
 - Prompt is prefixed with `[cron:<jobId> <job name>]` for traceability.
 - Each run starts a **fresh session id** (no prior conversation carry-over).
-- Default behavior: if `delivery` is omitted, isolated jobs announce a summary (`delivery.mode = "announce"`).
+- Default behavior:
+  - Isolated `agentTurn` jobs default to `delivery.mode = "announce"` when `delivery` is omitted.
+  - Isolated `script` jobs default to no delivery unless `delivery` is explicitly set.
 - `delivery.mode` (isolated-only) chooses what happens:
-  - `announce`: deliver a summary to the target channel and post a brief summary to the main session.
-  - `none`: internal only (no delivery, no main-session summary).
-- `wakeMode` controls when the main-session summary posts:
+  - `announce`: run subagent-style announce flow.
+  - `direct`: send run output directly to `delivery.channel`/`delivery.to`.
+  - `process`: rewrite output with `delivery.processModel` + `delivery.processPrompt`, then send directly.
+  - `none`: internal only (no delivery).
+- `wakeMode` controls when announce-related main-session summaries post:
   - `now`: immediate heartbeat.
   - `next-heartbeat`: waits for the next scheduled heartbeat.
 
@@ -152,10 +159,11 @@ your main chat history.
 
 ### Payload shapes (what runs)
 
-Two payload kinds are supported:
+Three payload kinds are supported:
 
 - `systemEvent`: main-session only, routed through the heartbeat prompt.
-- `agentTurn`: isolated-session only, runs a dedicated agent turn.
+- `agentTurn`: isolated-session only, runs a dedicated model turn.
+- `script`: isolated-session only, runs a shell command without invoking the model.
 
 Common `agentTurn` fields:
 
@@ -163,17 +171,28 @@ Common `agentTurn` fields:
 - `model` / `thinking`: optional overrides (see below).
 - `timeoutSeconds`: optional timeout override.
 
+Common `script` fields:
+
+- `command`: required shell command.
+- `timeoutSeconds`: optional timeout override.
+- `cwd` / `shell`: optional process execution overrides.
+
 Delivery config (isolated jobs only):
 
-- `delivery.mode`: `none` | `announce`.
+- `delivery.mode`: `none` | `direct` | `process` | `announce`.
 - `delivery.channel`: `last` or a specific channel.
 - `delivery.to`: channel-specific target (phone/chat/channel id).
-- `delivery.bestEffort`: avoid failing the job if announce delivery fails.
+- `delivery.bestEffort`: avoid failing the job when delivery fails.
+- `delivery.processModel`: optional model override for `process` mode.
+- `delivery.processPrompt`: optional instruction for `process` mode.
 
 Announce delivery suppresses messaging tool sends for the run; use `delivery.channel`/`delivery.to`
 to target the chat instead. When `delivery.mode = "none"`, no summary is posted to the main session.
 
-If `delivery` is omitted for isolated jobs, OpenClaw defaults to `announce`.
+Defaults when `delivery` is omitted:
+
+- Isolated `agentTurn`: defaults to `announce`.
+- Isolated `script`: defaults to `none`.
 
 #### Announce delivery flow
 
@@ -213,9 +232,14 @@ Resolution priority:
 
 Isolated jobs can deliver output to a channel via the top-level `delivery` config:
 
-- `delivery.mode`: `announce` (deliver a summary) or `none`.
+- `delivery.mode`:
+  - `announce`: subagent-style announce flow (default for isolated `agentTurn`).
+  - `direct`: direct outbound delivery.
+  - `process`: model post-process + direct outbound delivery.
+  - `none`: no delivery.
 - `delivery.channel`: `whatsapp` / `telegram` / `discord` / `slack` / `mattermost` (plugin) / `signal` / `imessage` / `last`.
 - `delivery.to`: channel-specific recipient target.
+- `delivery.processModel` / `delivery.processPrompt`: only used when mode is `process`.
 
 Delivery config is only valid for isolated jobs (`sessionTarget: "isolated"`).
 
@@ -282,12 +306,36 @@ Recurring, isolated job with delivery:
 }
 ```
 
+Recurring isolated `script` job with process delivery:
+
+```json
+{
+  "name": "Disk usage report",
+  "schedule": { "kind": "every", "everyMs": 3600000 },
+  "sessionTarget": "isolated",
+  "wakeMode": "next-heartbeat",
+  "payload": {
+    "kind": "script",
+    "command": "df -h / | tail -n +2"
+  },
+  "delivery": {
+    "mode": "process",
+    "channel": "telegram",
+    "to": "-1001234567890:topic:123",
+    "processModel": "ollama/llama3",
+    "processPrompt": "Summarize this shell output in Chinese within 3 bullet points."
+  }
+}
+```
+
 Notes:
 
 - `schedule.kind`: `at` (`at`), `every` (`everyMs`), or `cron` (`expr`, optional `tz`).
 - `schedule.at` accepts ISO 8601 (timezone optional; treated as UTC when omitted).
 - `everyMs` is milliseconds.
-- `sessionTarget` must be `"main"` or `"isolated"` and must match `payload.kind`.
+- `sessionTarget` must be `"main"` or `"isolated"` and must match `payload.kind`:
+  - `"main"` -> `"systemEvent"`
+  - `"isolated"` -> `"agentTurn"` or `"script"`
 - Optional fields: `agentId`, `description`, `enabled`, `deleteAfterRun` (defaults to true for `at`),
   `delivery`.
 - `wakeMode` defaults to `"now"` when omitted.
@@ -343,6 +391,9 @@ Disable cron entirely:
 - `OPENCLAW_SKIP_CRON=1` (env)
 
 ## CLI quickstart
+
+Note: CLI currently creates `systemEvent` and `agentTurn` jobs directly. `payload.kind = "script"` and
+advanced delivery (`direct` / `process`) are available via `cron.add` tool/API payloads.
 
 One-shot reminder (UTC ISO, auto-delete after success):
 

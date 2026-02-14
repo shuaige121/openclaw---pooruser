@@ -2,7 +2,10 @@ import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob } from "../types.js";
 import type { CronEvent, CronServiceState } from "./state.js";
 import { DEFAULT_AGENT_ID } from "../../routing/session-key.js";
+import { deliverCronResult } from "../deliver-result.js";
 import { resolveCronDeliveryPlan } from "../delivery.js";
+import { resolveDeliveryTarget } from "../isolated-agent/delivery-target.js";
+import { runScriptJob, type ScriptRunnerResult } from "../script-runner.js";
 import { sweepCronRunSessions } from "../session-reaper.js";
 import {
   computeJobNextRunAtMs,
@@ -37,6 +40,62 @@ const ERROR_BACKOFF_SCHEDULE_MS = [
 function errorBackoffMs(consecutiveErrors: number): number {
   const idx = Math.min(consecutiveErrors - 1, ERROR_BACKOFF_SCHEDULE_MS.length - 1);
   return ERROR_BACKOFF_SCHEDULE_MS[Math.max(0, idx)];
+}
+
+function resolveCronConcurrency(state: CronServiceState): number {
+  const raw = state.deps.cronConfig?.maxConcurrentRuns;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(raw));
+}
+
+function resolveJobTimeoutMs(job: CronJob): number {
+  const timeoutSeconds =
+    job.payload.kind === "agentTurn" || job.payload.kind === "script"
+      ? job.payload.timeoutSeconds
+      : undefined;
+  if (typeof timeoutSeconds !== "number" || !Number.isFinite(timeoutSeconds)) {
+    return DEFAULT_JOB_TIMEOUT_MS;
+  }
+  return Math.max(1, Math.floor(timeoutSeconds * 1_000));
+}
+
+function buildScriptOutputText(command: string, result: ScriptRunnerResult): string {
+  const sections: string[] = [
+    `command: ${command}`,
+    `status: ${result.status}`,
+    `durationMs: ${result.durationMs}`,
+  ];
+  if (typeof result.exitCode === "number") {
+    sections.push(`exitCode: ${result.exitCode}`);
+  }
+  if (result.error) {
+    sections.push(`error: ${result.error}`);
+  }
+  const stdout = result.stdout.trim();
+  if (stdout) {
+    sections.push(`stdout:\n${stdout}`);
+  }
+  const stderr = result.stderr.trim();
+  if (stderr) {
+    sections.push(`stderr:\n${stderr}`);
+  }
+  return sections.join("\n\n");
+}
+
+function summarizeScriptResult(result: ScriptRunnerResult): string {
+  if (result.status === "ok") {
+    const firstLine = result.stdout
+      .trim()
+      .split(/\r?\n/u)
+      .find((line) => line.trim().length > 0);
+    return firstLine ? `script ok: ${firstLine}` : "script ok";
+  }
+  if (result.status === "timeout") {
+    return result.error ? `script timeout: ${result.error}` : "script timeout";
+  }
+  return result.error ? `script error: ${result.error}` : "script error";
 }
 
 /**
@@ -196,22 +255,20 @@ export async function onTimer(state: CronServiceState) {
       sessionKey?: string;
       startedAt: number;
       endedAt: number;
-    }> = [];
+    }> = new Array(dueJobs.length);
 
-    for (const { id, job } of dueJobs) {
+    const runDueJob = async (entry: { id: string; job: CronJob }) => {
+      const { id, job } = entry;
       const startedAt = state.deps.nowMs();
       job.state.runningAtMs = startedAt;
       emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
 
-      const jobTimeoutMs =
-        job.payload.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
-          ? job.payload.timeoutSeconds * 1_000
-          : DEFAULT_JOB_TIMEOUT_MS;
+      const jobTimeoutMs = resolveJobTimeoutMs(job);
 
       try {
         let timeoutId: NodeJS.Timeout;
         const result = await Promise.race([
-          executeJobCore(state, job),
+          executeJobCore(state, job, { jobTimeoutMs }),
           new Promise<never>((_, reject) => {
             timeoutId = setTimeout(
               () => reject(new Error("cron: job execution timed out")),
@@ -219,27 +276,45 @@ export async function onTimer(state: CronServiceState) {
             );
           }),
         ]).finally(() => clearTimeout(timeoutId!));
-        results.push({ jobId: id, ...result, startedAt, endedAt: state.deps.nowMs() });
+        return { jobId: id, ...result, startedAt, endedAt: state.deps.nowMs() };
       } catch (err) {
         state.deps.log.warn(
           { jobId: id, jobName: job.name, timeoutMs: jobTimeoutMs },
           `cron: job failed: ${String(err)}`,
         );
-        results.push({
+        return {
           jobId: id,
-          status: "error",
+          status: "error" as const,
           error: String(err),
           startedAt,
           endedAt: state.deps.nowMs(),
-        });
+        };
       }
-    }
+    };
 
-    if (results.length > 0) {
+    const maxConcurrentRuns = Math.min(resolveCronConcurrency(state), dueJobs.length);
+    let nextIdx = 0;
+    await Promise.all(
+      Array.from({ length: maxConcurrentRuns }, async () => {
+        for (;;) {
+          const idx = nextIdx++;
+          if (idx >= dueJobs.length) {
+            return;
+          }
+          results[idx] = await runDueJob(dueJobs[idx]);
+        }
+      }),
+    );
+
+    const completedResults = results.filter(
+      (result): result is NonNullable<(typeof results)[number]> => result !== undefined,
+    );
+
+    if (completedResults.length > 0) {
       await locked(state, async () => {
         await ensureLoaded(state, { forceReload: true, skipRecompute: true });
 
-        for (const result of results) {
+        for (const result of completedResults) {
           const job = state.store?.jobs.find((j) => j.id === result.jobId);
           if (!job) {
             continue;
@@ -392,6 +467,7 @@ export async function runDueJobs(state: CronServiceState) {
 async function executeJobCore(
   state: CronServiceState,
   job: CronJob,
+  opts: { jobTimeoutMs: number },
 ): Promise<{
   status: "ok" | "error" | "skipped";
   error?: string;
@@ -447,34 +523,93 @@ async function executeJobCore(
     }
   }
 
-  if (job.payload.kind !== "agentTurn") {
-    return { status: "skipped", error: "isolated job requires payload.kind=agentTurn" };
+  if (job.payload.kind === "agentTurn") {
+    const res = await state.deps.runIsolatedAgentJob({
+      job,
+      message: job.payload.message,
+    });
+
+    // Post a short summary back to the main session only when announce delivery is active.
+    const summaryText = res.summary?.trim();
+    const deliveryPlan = resolveCronDeliveryPlan(job);
+    if (summaryText && deliveryPlan.mode === "announce") {
+      const prefix = "Cron";
+      const label =
+        res.status === "error" ? `${prefix} (error): ${summaryText}` : `${prefix}: ${summaryText}`;
+      state.deps.enqueueSystemEvent(label, { agentId: job.agentId });
+      if (job.wakeMode === "now") {
+        state.deps.requestHeartbeatNow({ reason: `cron:${job.id}` });
+      }
+    }
+
+    return {
+      status: res.status,
+      error: res.error,
+      summary: res.summary,
+      sessionId: res.sessionId,
+      sessionKey: res.sessionKey,
+    };
   }
 
-  const res = await state.deps.runIsolatedAgentJob({
-    job,
-    message: job.payload.message,
-  });
+  if (job.payload.kind !== "script") {
+    return {
+      status: "skipped",
+      error: 'isolated job requires payload.kind="agentTurn" or "script"',
+    };
+  }
 
-  // Post a short summary back to the main session.
-  const summaryText = res.summary?.trim();
+  const scriptResult = await runScriptJob({
+    command: job.payload.command,
+    timeoutMs: opts.jobTimeoutMs,
+    cwd: job.payload.cwd,
+    shell: job.payload.shell,
+  });
+  const summary = summarizeScriptResult(scriptResult);
+  const outputText = buildScriptOutputText(job.payload.command, scriptResult);
   const deliveryPlan = resolveCronDeliveryPlan(job);
-  if (summaryText && deliveryPlan.requested) {
-    const prefix = "Cron";
-    const label =
-      res.status === "error" ? `${prefix} (error): ${summaryText}` : `${prefix}: ${summaryText}`;
-    state.deps.enqueueSystemEvent(label, { agentId: job.agentId });
-    if (job.wakeMode === "now") {
-      state.deps.requestHeartbeatNow({ reason: `cron:${job.id}` });
+  if (deliveryPlan.requested) {
+    const runtime = state.deps.resolveCronAgentRuntime?.(job.agentId);
+    const outboundCliDeps = state.deps.outboundCliDeps;
+    const bestEffort = job.delivery?.bestEffort === true;
+    if (!runtime || !outboundCliDeps) {
+      const error = "cron script delivery requires gateway runtime deps";
+      if (!bestEffort) {
+        return { status: "error", summary, error };
+      }
+      state.deps.log.warn(
+        { jobId: job.id, reason: error },
+        "cron: best-effort script delivery skipped",
+      );
+    } else {
+      const resolvedDelivery = await resolveDeliveryTarget(runtime.cfg, runtime.agentId, {
+        channel: deliveryPlan.channel,
+        to: deliveryPlan.to,
+      });
+      const deliveryResult = await deliverCronResult({
+        cfg: runtime.cfg,
+        deps: outboundCliDeps,
+        job,
+        agentId: runtime.agentId,
+        deliveryPlan,
+        resolvedDelivery,
+        outputText,
+        timeoutMs: opts.jobTimeoutMs,
+        bestEffort,
+        announce: {
+          childSessionKey: `cron:${job.id}:script`,
+          childRunId: `${job.id}:script:${Date.now()}`,
+        },
+      });
+      if (deliveryResult.error) {
+        return { status: "error", summary, error: deliveryResult.error };
+      }
     }
   }
 
   return {
-    status: res.status,
-    error: res.error,
-    summary: res.summary,
-    sessionId: res.sessionId,
-    sessionKey: res.sessionKey,
+    status: scriptResult.status === "ok" ? "ok" : "error",
+    summary,
+    error: scriptResult.status === "ok" ? undefined : scriptResult.error,
   };
 }
 
@@ -504,7 +639,7 @@ export async function executeJob(
     sessionKey?: string;
   };
   try {
-    coreResult = await executeJobCore(state, job);
+    coreResult = await executeJobCore(state, job, { jobTimeoutMs: resolveJobTimeoutMs(job) });
   } catch (err) {
     coreResult = { status: "error", error: String(err) };
   }

@@ -75,5 +75,8 @@ export function normalizePayloadToSystemText(payload: CronPayload) {
   if (payload.kind === "systemEvent") {
     return payload.text.trim();
   }
-  return payload.message.trim();
+  if (payload.kind === "agentTurn") {
+    return payload.message.trim();
+  }
+  return payload.command.trim();
 }

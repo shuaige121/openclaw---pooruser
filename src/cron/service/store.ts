@@ -127,18 +127,27 @@ function normalizePayloadKind(payload: Record<string, unknown>) {
     payload.kind = "systemEvent";
     return true;
   }
+  if (raw === "script") {
+    payload.kind = "script";
+    return true;
+  }
   return false;
 }
 
 function inferPayloadIfMissing(raw: Record<string, unknown>) {
   const message = typeof raw.message === "string" ? raw.message.trim() : "";
   const text = typeof raw.text === "string" ? raw.text.trim() : "";
+  const command = typeof raw.command === "string" ? raw.command.trim() : "";
   if (message) {
     raw.payload = { kind: "agentTurn", message };
     return true;
   }
   if (text) {
     raw.payload = { kind: "systemEvent", text };
+    return true;
+  }
+  if (command) {
+    raw.payload = { kind: "script", command };
     return true;
   }
   return false;
@@ -335,6 +344,9 @@ export async function ensureLoaded(
         } else if (typeof payloadRecord.text === "string" && payloadRecord.text.trim()) {
           payloadRecord.kind = "systemEvent";
           mutated = true;
+        } else if (typeof payloadRecord.command === "string" && payloadRecord.command.trim()) {
+          payloadRecord.kind = "script";
+          mutated = true;
         }
       }
       if (payloadRecord.kind === "agentTurn") {
@@ -423,6 +435,16 @@ export async function ensureLoaded(
         if (lowered === "deliver") {
           (delivery as { mode?: unknown }).mode = "announce";
           mutated = true;
+        } else if (
+          lowered === "announce" ||
+          lowered === "none" ||
+          lowered === "direct" ||
+          lowered === "process"
+        ) {
+          if (modeRaw !== lowered) {
+            (delivery as { mode?: unknown }).mode = lowered;
+            mutated = true;
+          }
         }
       } else if (modeRaw === undefined || modeRaw === null) {
         // Explicitly persist the default so existing jobs don't silently
