@@ -23,6 +23,14 @@ import {
   queueEmbeddedPiMessage,
   waitForEmbeddedPiRunEnd,
 } from "./pi-embedded.js";
+import {
+  buildSubagentAnnounceResultContract,
+  createSubagentAnnounceChannelContract,
+  normalizeSubagentAnnounceChannelContract,
+  SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT,
+  SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT_VERSION,
+  type SubagentAnnounceChannelContract,
+} from "./subagent-announce-contract.js";
 import { type AnnounceQueueItem, enqueueAnnounce } from "./subagent-announce-queue.js";
 import { readLatestAssistantReply } from "./tools/agent-step.js";
 
@@ -364,12 +372,35 @@ export type SubagentRunOutcome = {
 
 export type SubagentAnnounceType = "subagent task" | "cron job";
 
+export const SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT_FULL = `${SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT}.v${SUBAGENT_ANNOUNCE_CHANNEL_CONTRACT_VERSION}`;
+
+function resolveSubagentAnnounceChannel(params: {
+  returnChannel?: SubagentAnnounceChannelContract;
+  requesterSessionKey?: string;
+  requesterDisplayKey?: string;
+  requesterOrigin?: DeliveryContext;
+}): SubagentAnnounceChannelContract | undefined {
+  const fromContract = normalizeSubagentAnnounceChannelContract(params.returnChannel);
+  if (fromContract) {
+    return fromContract;
+  }
+  if (!params.requesterSessionKey?.trim()) {
+    return undefined;
+  }
+  return createSubagentAnnounceChannelContract({
+    requesterSessionKey: params.requesterSessionKey,
+    requesterDisplayKey: params.requesterDisplayKey,
+    requesterOrigin: params.requesterOrigin,
+  });
+}
+
 export async function runSubagentAnnounceFlow(params: {
   childSessionKey: string;
   childRunId: string;
-  requesterSessionKey: string;
+  requesterSessionKey?: string;
   requesterOrigin?: DeliveryContext;
-  requesterDisplayKey: string;
+  requesterDisplayKey?: string;
+  returnChannel?: SubagentAnnounceChannelContract;
   task: string;
   timeoutMs: number;
   cleanup: "delete" | "keep";
@@ -384,7 +415,16 @@ export async function runSubagentAnnounceFlow(params: {
   let didAnnounce = false;
   let shouldDeleteChildSession = params.cleanup === "delete";
   try {
-    const requesterOrigin = normalizeDeliveryContext(params.requesterOrigin);
+    const returnChannel = resolveSubagentAnnounceChannel({
+      returnChannel: params.returnChannel,
+      requesterSessionKey: params.requesterSessionKey,
+      requesterDisplayKey: params.requesterDisplayKey,
+      requesterOrigin: params.requesterOrigin,
+    });
+    if (!returnChannel) {
+      return false;
+    }
+    const requesterOrigin = normalizeDeliveryContext(returnChannel.requesterOrigin);
     const childSessionId = (() => {
       const entry = loadSessionEntryByKey(params.childSessionKey);
       return typeof entry?.sessionId === "string" && entry.sessionId.trim()
@@ -486,21 +526,28 @@ export async function runSubagentAnnounceFlow(params: {
     // Build instructional message for main agent
     const announceType = params.announceType ?? "subagent task";
     const taskLabel = params.label || params.task || "task";
+    const announceContract = buildSubagentAnnounceResultContract({
+      announceType,
+      task: taskLabel,
+      status: outcome.status,
+      statusLabel,
+      findings: reply || "(no output)",
+      stats: statsLine,
+      childSessionKey: params.childSessionKey,
+      childRunId: params.childRunId,
+      error: outcome.error,
+    });
     const triggerMessage = [
-      `A ${announceType} "${taskLabel}" just ${statusLabel}.`,
+      `Subagent return contract (${announceContract.contract}.v${announceContract.version}):`,
+      JSON.stringify(announceContract),
       "",
-      "Findings:",
-      reply || "(no output)",
-      "",
-      statsLine,
-      "",
-      "Summarize this naturally for the user. Keep it brief (1-2 sentences). Flow it into the conversation naturally.",
+      "Use this contract payload to draft a natural user-facing update in 1-2 sentences.",
       `Do not mention technical details like tokens, stats, or that this was a ${announceType}.`,
       "You can respond with NO_REPLY if no announcement is needed (e.g., internal task with no user-facing result).",
     ].join("\n");
 
     const queued = await maybeQueueSubagentAnnounce({
-      requesterSessionKey: params.requesterSessionKey,
+      requesterSessionKey: returnChannel.requesterSessionKey,
       triggerMessage,
       summaryLine: taskLabel,
       requesterOrigin,
@@ -517,13 +564,13 @@ export async function runSubagentAnnounceFlow(params: {
     // Send to main agent - it will respond in its own voice
     let directOrigin = requesterOrigin;
     if (!directOrigin) {
-      const { entry } = loadRequesterSessionEntry(params.requesterSessionKey);
+      const { entry } = loadRequesterSessionEntry(returnChannel.requesterSessionKey);
       directOrigin = deliveryContextFromSession(entry);
     }
     await callGateway({
       method: "agent",
       params: {
-        sessionKey: params.requesterSessionKey,
+        sessionKey: returnChannel.requesterSessionKey,
         message: triggerMessage,
         deliver: true,
         channel: directOrigin?.channel,

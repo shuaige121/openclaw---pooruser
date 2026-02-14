@@ -86,6 +86,11 @@ describe("openclaw-tools: subagents", () => {
     expect(result.details).toMatchObject({
       status: "accepted",
       runId: "run-1",
+      delivery: {
+        status: "pending",
+        mode: "announce",
+        contract: "subagent_announce_channel.v1",
+      },
     });
     expect(childSessionKey?.startsWith("agent:research:subagent:")).toBe(true);
   });

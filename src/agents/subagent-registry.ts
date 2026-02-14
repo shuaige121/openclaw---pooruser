@@ -2,6 +2,11 @@ import { loadConfig } from "../config/config.js";
 import { callGateway } from "../gateway/call.js";
 import { onAgentEvent } from "../infra/agent-events.js";
 import { type DeliveryContext, normalizeDeliveryContext } from "../utils/delivery-context.js";
+import {
+  createSubagentAnnounceChannelContract,
+  normalizeSubagentAnnounceChannelContract,
+  type SubagentAnnounceChannelContract,
+} from "./subagent-announce-contract.js";
 import { runSubagentAnnounceFlow, type SubagentRunOutcome } from "./subagent-announce.js";
 import {
   loadSubagentRegistryFromDisk,
@@ -15,6 +20,7 @@ export type SubagentRunRecord = {
   requesterSessionKey: string;
   requesterOrigin?: DeliveryContext;
   requesterDisplayKey: string;
+  returnChannel?: SubagentAnnounceChannelContract;
   task: string;
   cleanup: "delete" | "keep";
   label?: string;
@@ -45,6 +51,26 @@ function persistSubagentRuns() {
 
 const resumedRuns = new Set<string>();
 
+function resolveReturnChannel(params: {
+  returnChannel?: SubagentAnnounceChannelContract;
+  requesterSessionKey?: string;
+  requesterDisplayKey?: string;
+  requesterOrigin?: DeliveryContext;
+}): SubagentAnnounceChannelContract | undefined {
+  const fromContract = normalizeSubagentAnnounceChannelContract(params.returnChannel);
+  if (fromContract) {
+    return fromContract;
+  }
+  if (!params.requesterSessionKey?.trim()) {
+    return undefined;
+  }
+  return createSubagentAnnounceChannelContract({
+    requesterSessionKey: params.requesterSessionKey,
+    requesterDisplayKey: params.requesterDisplayKey,
+    requesterOrigin: params.requesterOrigin,
+  });
+}
+
 function resumeSubagentRun(runId: string) {
   if (!runId || resumedRuns.has(runId)) {
     return;
@@ -61,13 +87,22 @@ function resumeSubagentRun(runId: string) {
     if (!beginSubagentCleanup(runId)) {
       return;
     }
-    const requesterOrigin = normalizeDeliveryContext(entry.requesterOrigin);
+    const returnChannel = resolveReturnChannel({
+      returnChannel: entry.returnChannel,
+      requesterSessionKey: entry.requesterSessionKey,
+      requesterDisplayKey: entry.requesterDisplayKey,
+      requesterOrigin: entry.requesterOrigin,
+    });
+    const requesterOrigin = normalizeDeliveryContext(
+      returnChannel?.requesterOrigin ?? entry.requesterOrigin,
+    );
     void runSubagentAnnounceFlow({
       childSessionKey: entry.childSessionKey,
       childRunId: entry.runId,
-      requesterSessionKey: entry.requesterSessionKey,
+      requesterSessionKey: returnChannel?.requesterSessionKey ?? entry.requesterSessionKey,
       requesterOrigin,
-      requesterDisplayKey: entry.requesterDisplayKey,
+      requesterDisplayKey: returnChannel?.requesterDisplayKey ?? entry.requesterDisplayKey,
+      returnChannel,
       task: entry.task,
       timeoutMs: SUBAGENT_ANNOUNCE_TIMEOUT_MS,
       cleanup: entry.cleanup,
@@ -224,13 +259,22 @@ function ensureListener() {
     if (!beginSubagentCleanup(evt.runId)) {
       return;
     }
-    const requesterOrigin = normalizeDeliveryContext(entry.requesterOrigin);
+    const returnChannel = resolveReturnChannel({
+      returnChannel: entry.returnChannel,
+      requesterSessionKey: entry.requesterSessionKey,
+      requesterDisplayKey: entry.requesterDisplayKey,
+      requesterOrigin: entry.requesterOrigin,
+    });
+    const requesterOrigin = normalizeDeliveryContext(
+      returnChannel?.requesterOrigin ?? entry.requesterOrigin,
+    );
     void runSubagentAnnounceFlow({
       childSessionKey: entry.childSessionKey,
       childRunId: entry.runId,
-      requesterSessionKey: entry.requesterSessionKey,
+      requesterSessionKey: returnChannel?.requesterSessionKey ?? entry.requesterSessionKey,
       requesterOrigin,
-      requesterDisplayKey: entry.requesterDisplayKey,
+      requesterDisplayKey: returnChannel?.requesterDisplayKey ?? entry.requesterDisplayKey,
+      returnChannel,
       task: entry.task,
       timeoutMs: SUBAGENT_ANNOUNCE_TIMEOUT_MS,
       cleanup: entry.cleanup,
@@ -287,6 +331,7 @@ export function registerSubagentRun(params: {
   requesterSessionKey: string;
   requesterOrigin?: DeliveryContext;
   requesterDisplayKey: string;
+  returnChannel?: SubagentAnnounceChannelContract;
   task: string;
   cleanup: "delete" | "keep";
   label?: string;
@@ -297,13 +342,24 @@ export function registerSubagentRun(params: {
   const archiveAfterMs = resolveArchiveAfterMs(cfg);
   const archiveAtMs = archiveAfterMs ? now + archiveAfterMs : undefined;
   const waitTimeoutMs = resolveSubagentWaitTimeoutMs(cfg, params.runTimeoutSeconds);
-  const requesterOrigin = normalizeDeliveryContext(params.requesterOrigin);
+  const returnChannel = resolveReturnChannel({
+    returnChannel: params.returnChannel,
+    requesterSessionKey: params.requesterSessionKey,
+    requesterDisplayKey: params.requesterDisplayKey,
+    requesterOrigin: params.requesterOrigin,
+  });
+  const requesterOrigin = normalizeDeliveryContext(
+    returnChannel?.requesterOrigin ?? params.requesterOrigin,
+  );
+  const requesterSessionKey = returnChannel?.requesterSessionKey ?? params.requesterSessionKey;
+  const requesterDisplayKey = returnChannel?.requesterDisplayKey ?? params.requesterDisplayKey;
   subagentRuns.set(params.runId, {
     runId: params.runId,
     childSessionKey: params.childSessionKey,
-    requesterSessionKey: params.requesterSessionKey,
+    requesterSessionKey,
     requesterOrigin,
-    requesterDisplayKey: params.requesterDisplayKey,
+    requesterDisplayKey,
+    returnChannel,
     task: params.task,
     cleanup: params.cleanup,
     label: params.label,
@@ -372,13 +428,22 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
     if (!beginSubagentCleanup(runId)) {
       return;
     }
-    const requesterOrigin = normalizeDeliveryContext(entry.requesterOrigin);
+    const returnChannel = resolveReturnChannel({
+      returnChannel: entry.returnChannel,
+      requesterSessionKey: entry.requesterSessionKey,
+      requesterDisplayKey: entry.requesterDisplayKey,
+      requesterOrigin: entry.requesterOrigin,
+    });
+    const requesterOrigin = normalizeDeliveryContext(
+      returnChannel?.requesterOrigin ?? entry.requesterOrigin,
+    );
     void runSubagentAnnounceFlow({
       childSessionKey: entry.childSessionKey,
       childRunId: entry.runId,
-      requesterSessionKey: entry.requesterSessionKey,
+      requesterSessionKey: returnChannel?.requesterSessionKey ?? entry.requesterSessionKey,
       requesterOrigin,
-      requesterDisplayKey: entry.requesterDisplayKey,
+      requesterDisplayKey: returnChannel?.requesterDisplayKey ?? entry.requesterDisplayKey,
+      returnChannel,
       task: entry.task,
       timeoutMs: SUBAGENT_ANNOUNCE_TIMEOUT_MS,
       cleanup: entry.cleanup,
