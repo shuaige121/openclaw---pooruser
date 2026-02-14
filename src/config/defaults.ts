@@ -465,6 +465,27 @@ export function applyCompactionDefaults(cfg: OpenClawConfig): OpenClawConfig {
   };
 }
 
+export function applyRouterDefaults(cfg: OpenClawConfig): OpenClawConfig {
+  const defaults = cfg.agents?.defaults;
+  if (!defaults?.router) {
+    return cfg;
+  }
+  const router = defaults.router;
+  if (router.enabled !== undefined) {
+    return cfg;
+  }
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      defaults: {
+        ...defaults,
+        router: { ...router, enabled: false },
+      },
+    },
+  };
+}
+
 export function resetSessionDefaultsWarningForTests() {
   defaultWarnState = { warned: false };
 }
