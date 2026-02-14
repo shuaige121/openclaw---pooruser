@@ -13,6 +13,7 @@ import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
+import { resolveAgentConfig } from "./agent-scope.js";
 import { createApplyPatchTool } from "./apply-patch.js";
 import {
   createExecTool,
@@ -47,6 +48,7 @@ import {
   applyOwnerOnlyToolPolicy,
   buildPluginToolGroups,
   collectExplicitAllowlist,
+  expandToolGroups,
   expandPolicyWithPluginGroups,
   normalizeToolName,
   resolveToolProfilePolicy,
@@ -102,6 +104,80 @@ function resolveExecConfig(cfg: OpenClawConfig | undefined) {
     notifyOnExit: globalExec?.notifyOnExit,
     applyPatch: globalExec?.applyPatch,
   };
+}
+
+import type { ToolGatingConfig } from "../config/types.tools.js";
+
+function resolveEffectiveToolGating(options: {
+  config?: OpenClawConfig;
+  agentId?: string;
+}): ToolGatingConfig | undefined {
+  const config = options.config;
+  if (!config) {
+    return undefined;
+  }
+  const agentGating =
+    options.agentId && config
+      ? resolveAgentConfig(config, options.agentId)?.tools?.gating
+      : undefined;
+  return agentGating ?? config.agents?.defaults?.tools?.gating ?? config.tools?.gating;
+}
+
+function applyToolGating(params: {
+  tools: AnyAgentTool[];
+  currentMessage?: string;
+  gating?: ToolGatingConfig;
+}): AnyAgentTool[] {
+  const message = params.currentMessage?.trim().toLowerCase();
+  if (!message) {
+    return params.tools;
+  }
+  const gating = params.gating;
+  if (
+    !gating ||
+    gating.enabled !== true ||
+    !Array.isArray(gating.rules) ||
+    gating.rules.length === 0
+  ) {
+    return params.tools;
+  }
+
+  const gatedNames = new Set<string>();
+  for (const rule of gating.rules) {
+    if (!rule || typeof rule !== "object") {
+      continue;
+    }
+    const triggers = Array.isArray(rule.triggers)
+      ? rule.triggers
+          .map((entry) => (typeof entry === "string" ? entry.trim().toLowerCase() : ""))
+          .filter(Boolean)
+      : [];
+    if (triggers.length === 0) {
+      continue;
+    }
+    const triggerMode = rule.triggerMode === "prefix" ? "prefix" : "keyword";
+    const matched = triggers.some((trigger) =>
+      triggerMode === "prefix" ? message.startsWith(trigger) : message.includes(trigger),
+    );
+    if (matched) {
+      continue;
+    }
+    const expanded = expandToolGroups(
+      Array.isArray(rule.tools)
+        ? rule.tools.filter((entry): entry is string => typeof entry === "string")
+        : [],
+    );
+    for (const name of expanded) {
+      const normalized = normalizeToolName(name);
+      if (normalized) {
+        gatedNames.add(normalized);
+      }
+    }
+  }
+  if (gatedNames.size === 0) {
+    return params.tools;
+  }
+  return params.tools.filter((tool) => !gatedNames.has(normalizeToolName(tool.name)));
 }
 
 export const __testing = {
@@ -162,6 +238,8 @@ export function createOpenClawCodingTools(options?: {
   requireExplicitMessageTarget?: boolean;
   /** If true, omit the message tool from the tool list. */
   disableMessageTool?: boolean;
+  /** Current user message used for lightweight keyword/prefix tool gating. */
+  currentMessage?: string;
   /** Whether the sender is an owner (required for owner-only tools). */
   senderIsOwner?: boolean;
 }): AnyAgentTool[] {
@@ -182,6 +260,10 @@ export function createOpenClawCodingTools(options?: {
     sessionKey: options?.sessionKey,
     modelProvider: options?.modelProvider,
     modelId: options?.modelId,
+  });
+  const toolGating = resolveEffectiveToolGating({
+    config: options?.config,
+    agentId,
   });
   const groupPolicy = resolveGroupToolPolicy({
     config: options?.config,
@@ -433,9 +515,14 @@ export function createOpenClawCodingTools(options?: {
   const subagentFiltered = subagentPolicyExpanded
     ? filterToolsByPolicy(sandboxed, subagentPolicyExpanded)
     : sandboxed;
+  const gated = applyToolGating({
+    tools: subagentFiltered,
+    currentMessage: options?.currentMessage,
+    gating: toolGating,
+  });
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
-  const normalized = subagentFiltered.map(normalizeToolParameters);
+  const normalized = gated.map(normalizeToolParameters);
   const withHooks = normalized.map((tool) =>
     wrapToolWithBeforeToolCallHook(tool, {
       agentId,

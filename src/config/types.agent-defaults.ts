@@ -5,12 +5,13 @@ import type {
   HumanDelayConfig,
   TypingMode,
 } from "./types.base.js";
+import type { QueryRouterConfig } from "./types.router.js";
 import type {
   SandboxBrowserSettings,
   SandboxDockerSettings,
   SandboxPruneSettings,
 } from "./types.sandbox.js";
-import type { MemorySearchConfig } from "./types.tools.js";
+import type { AgentToolsConfig, MemorySearchConfig } from "./types.tools.js";
 
 export type AgentModelEntryConfig = {
   alias?: string;
@@ -128,12 +129,16 @@ export type AgentDefaultsConfig = {
   contextTokens?: number;
   /** Optional CLI backends for text-only fallback (claude-cli, etc.). */
   cliBackends?: Record<string, CliBackendConfig>;
+  /** Default tool policy/gating applied to agents when not overridden per agent. */
+  tools?: AgentToolsConfig;
   /** Opt-in: prune old tool results from the LLM context to reduce token usage. */
   contextPruning?: AgentContextPruningConfig;
   /** Compaction tuning and pre-compaction memory flush behavior. */
   compaction?: AgentCompactionConfig;
   /** Vector memory search configuration (per-agent overrides supported). */
   memorySearch?: MemorySearchConfig;
+  /** Intelligent query router for dynamic model selection based on query complexity. */
+  router?: QueryRouterConfig;
   /** Default thinking level when no /think directive is present. */
   thinkingDefault?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   /** Default verbose level when no /verbose directive is present. */

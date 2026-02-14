@@ -14,6 +14,7 @@ import {
   isEmbeddedPiRunStreaming,
   resolveEmbeddedSessionLane,
 } from "../../agents/pi-embedded.js";
+import { classifyQueryComplexity } from "../../agents/query-router.js";
 import {
   loadSessionStore,
   resolveGroupSessionKey,
@@ -187,7 +188,29 @@ export async function runPreparedReply(
   const inboundMetaPrompt = buildInboundMetaSystemPrompt(
     isNewSession ? sessionCtx : { ...sessionCtx, ThreadStarterBody: undefined },
   );
-  const extraSystemPrompt = [inboundMetaPrompt, groupIntro, groupSystemPrompt]
+
+  // Plan mode: inject delegation directive for complex multi-step tasks
+  let planModePrompt = "";
+  const routerCfg = agentCfg?.router;
+  if (routerCfg?.enabled) {
+    const bodyForPlan = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
+    const complexity = classifyQueryComplexity(bodyForPlan);
+    const hasMultiTask = complexity.signals.some((s) => s.startsWith("tasks:"));
+    if (hasMultiTask && complexity.score > 0.5) {
+      planModePrompt =
+        "## Task Delegation\n" +
+        "This message contains multiple sub-tasks. To save tokens and improve throughput:\n" +
+        "1. Decompose into independent sub-tasks\n" +
+        "2. Handle simple lookups/queries yourself\n" +
+        "3. Use `sessions_spawn` for each non-trivial sub-task with an appropriate model:\n" +
+        '   - Simple file ops / web search: `{ "model": "openai-codex/gpt-5.2" }`\n' +
+        '   - Code generation / analysis: `{ "model": "openai-codex/gpt-5.3-codex" }`\n' +
+        "4. Collect results and synthesize a final answer\n" +
+        "Only delegate if it genuinely saves effort; trivial tasks should be done inline.";
+    }
+  }
+
+  const extraSystemPrompt = [inboundMetaPrompt, groupIntro, groupSystemPrompt, planModePrompt]
     .filter(Boolean)
     .join("\n\n");
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";

@@ -163,6 +163,49 @@ Run `openclaw doctor` to surface risky/misconfigured DM policies.
 - [Cron + wakeups](https://docs.openclaw.ai/automation/cron-jobs); [webhooks](https://docs.openclaw.ai/automation/webhook); [Gmail Pub/Sub](https://docs.openclaw.ai/automation/gmail-pubsub).
 - [Skills platform](https://docs.openclaw.ai/tools/skills): bundled, managed, and workspace skills with install gating + UI.
 
+#### Smart Query Router
+
+- Intelligent model routing based on query complexity — automatically selects between fast/balanced/capable model tiers.
+- Complexity scoring uses message length, code blocks, media presence, technical keywords (EN + CJK), multi-task detection, and conversation depth.
+- Token budget caps (`tokenBudget.perSession` / `tokenBudget.daily`) with configurable `onExceeded` behavior (`downgrade`, `block`, `warn`).
+- Override rules: `mediaAlwaysCapable` (default: true) and `codeAlwaysBalanced` (default: true).
+
+```json5
+{
+  agents: {
+    defaults: {
+      router: {
+        enabled: true,
+        tiers: {
+          fast: { models: ["openai/gpt-5.2"], maxComplexity: 0.3 },
+          balanced: { models: ["openai/gpt-5.3-codex"], maxComplexity: 0.7 },
+          capable: { models: ["anthropic/claude-opus-4-6"] },
+        },
+        tokenBudget: { perSession: 500000, warningThreshold: 0.8, onExceeded: "downgrade" },
+      },
+    },
+  },
+}
+```
+
+#### Cron + Tool Gating Updates
+
+- Cron isolated jobs now support `payload.kind = "script"` for shell commands without invoking the agent model.
+- Cron delivery modes now include `none`, `direct`, `process`, and `announce`.
+- `process` mode supports `delivery.processModel` + `delivery.processPrompt` for lightweight post-processing before send.
+- Tool gating is available via `tools.gating` (or `agents.defaults.tools.gating`) to hide tools unless the current user message matches keyword/prefix triggers.
+
+```json5
+{
+  tools: {
+    gating: {
+      enabled: true,
+      rules: [{ tools: ["cron"], triggers: ["cron", "schedule"] }],
+    },
+  },
+}
+```
+
 ### Runtime + safety
 
 - [Channel routing](https://docs.openclaw.ai/concepts/channel-routing), [retry policy](https://docs.openclaw.ai/concepts/retry), and [streaming/chunking](https://docs.openclaw.ai/concepts/streaming).

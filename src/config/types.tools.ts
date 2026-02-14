@@ -160,6 +160,22 @@ export type GroupToolPolicyConfig = {
 
 export type GroupToolPolicyBySenderConfig = Record<string, GroupToolPolicyConfig>;
 
+export type ToolGatingRule = {
+  /** Tool names or tool groups gated by this rule (e.g. ["cron"]). */
+  tools: string[];
+  /** Trigger strings checked against the current user message. */
+  triggers: string[];
+  /** Trigger match strategy (default: "keyword"). */
+  triggerMode?: "keyword" | "prefix";
+};
+
+export type ToolGatingConfig = {
+  /** Enable keyword/prefix-based tool gating. */
+  enabled?: boolean;
+  /** Gating rules evaluated against the current user message. */
+  rules?: ToolGatingRule[];
+};
+
 export type ExecToolConfig = {
   /** Exec host routing (default: sandbox). */
   host?: "sandbox" | "gateway" | "node";
@@ -202,6 +218,8 @@ export type AgentToolsConfig = {
   /** Additional allowlist entries merged into allow and/or profile allowlist. */
   alsoAllow?: string[];
   deny?: string[];
+  /** Message-triggered tool gating rules. */
+  gating?: ToolGatingConfig;
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
   /** Per-agent elevated exec gate (can only further restrict global tools.elevated). */
@@ -330,6 +348,8 @@ export type ToolsConfig = {
   /** Additional allowlist entries merged into allow and/or profile allowlist. */
   alsoAllow?: string[];
   deny?: string[];
+  /** Message-triggered tool gating rules. */
+  gating?: ToolGatingConfig;
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
   web?: {
