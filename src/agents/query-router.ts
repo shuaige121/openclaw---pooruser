@@ -20,6 +20,10 @@ export type RouteResult = {
   tier: TierName;
   score: number;
   signals: string[];
+  /** Tool allowlist from the selected tier (undefined = no restriction). */
+  toolAllow?: string[];
+  /** Tool denylist from the selected tier (undefined = no restriction). */
+  toolDeny?: string[];
 };
 
 export type RouteQueryParams = {
@@ -504,5 +508,7 @@ export function routeQuery(params: RouteQueryParams): RouteResult | null {
     tier: cappedSelection.tier,
     score,
     signals,
+    toolAllow: cappedSelection.tierCfg.tools?.allow,
+    toolDeny: cappedSelection.tierCfg.tools?.deny,
   };
 }

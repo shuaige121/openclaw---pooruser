@@ -107,6 +107,7 @@ function resolveExecConfig(cfg: OpenClawConfig | undefined) {
 }
 
 import type { ToolGatingConfig } from "../config/types.tools.js";
+import { classifyQueryComplexity, selectModelTier } from "./query-router.js";
 
 function resolveEffectiveToolGating(options: {
   config?: OpenClawConfig;
@@ -178,6 +179,49 @@ function applyToolGating(params: {
     return params.tools;
   }
   return params.tools.filter((tool) => !gatedNames.has(normalizeToolName(tool.name)));
+}
+
+function applyRouterToolFilter(params: {
+  tools: AnyAgentTool[];
+  currentMessage?: string;
+  config?: OpenClawConfig;
+}): AnyAgentTool[] {
+  const { tools, currentMessage, config } = params;
+  const routerCfg = config?.agents?.defaults?.router;
+  if (!routerCfg?.enabled || !currentMessage?.trim()) {
+    return tools;
+  }
+  const { score } = classifyQueryComplexity(currentMessage);
+  const selection = selectModelTier(score, routerCfg.tiers);
+  if (!selection) {
+    return tools;
+  }
+  const tierTools = selection.tierCfg.tools;
+  if (!tierTools) {
+    return tools;
+  }
+
+  let filtered = tools;
+
+  if (tierTools.allow && tierTools.allow.length > 0) {
+    const allowed = new Set(
+      expandToolGroups(tierTools.allow)
+        .map((n) => normalizeToolName(n))
+        .filter(Boolean),
+    );
+    filtered = filtered.filter((tool) => allowed.has(normalizeToolName(tool.name)));
+  }
+
+  if (tierTools.deny && tierTools.deny.length > 0) {
+    const denied = new Set(
+      expandToolGroups(tierTools.deny)
+        .map((n) => normalizeToolName(n))
+        .filter(Boolean),
+    );
+    filtered = filtered.filter((tool) => !denied.has(normalizeToolName(tool.name)));
+  }
+
+  return filtered;
 }
 
 export const __testing = {
@@ -520,9 +564,14 @@ export function createOpenClawCodingTools(options?: {
     currentMessage: options?.currentMessage,
     gating: toolGating,
   });
+  const routerFiltered = applyRouterToolFilter({
+    tools: gated,
+    currentMessage: options?.currentMessage,
+    config: options?.config,
+  });
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
-  const normalized = gated.map(normalizeToolParameters);
+  const normalized = routerFiltered.map(normalizeToolParameters);
   const withHooks = normalized.map((tool) =>
     wrapToolWithBeforeToolCallHook(tool, {
       agentId,

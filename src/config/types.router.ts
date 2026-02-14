@@ -3,6 +3,15 @@ export type QueryRouterTierConfig = {
   models: string[];
   /** Route to this tier if complexity score <= this value (range: 0..1, not needed for last tier). */
   maxComplexity?: number;
+  /**
+   * Tool allow/deny filter applied when this tier is selected.
+   * Supports tool names and group references (e.g. "group:web").
+   * When omitted, all tools pass through (no restriction).
+   */
+  tools?: {
+    allow?: string[];
+    deny?: string[];
+  };
 };
 
 export type QueryRouterConfig = {
