@@ -21,6 +21,19 @@ media/
 workspace/tmp/
 workspace/canvas/console/node_modules/
 
+# Build output
+dist/
+
+# Bundled UI assets (generated)
+src/canvas-host/a2ui/.bundle.hash
+src/canvas-host/a2ui/a2ui.bundle.js
+
+# Disabled extensions (local)
+_disabled_extensions/
+
+# Generated reports
+docs/reports/
+
 # OS files
 .DS_Store
 Thumbs.db
