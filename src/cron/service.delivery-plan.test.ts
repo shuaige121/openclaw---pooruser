@@ -89,4 +89,40 @@ describe("CronService delivery plan consistency", () => {
     cron.stop();
     await store.cleanup();
   });
+
+  it("does not post isolated summary when delivery mode is direct", async () => {
+    const store = await makeStorePath();
+    const enqueueSystemEvent = vi.fn();
+    const cron = new CronService({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      enqueueSystemEvent,
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob: vi.fn(async () => ({ status: "ok", summary: "done" })),
+    });
+    await cron.start();
+    const job = await cron.add({
+      name: "direct-delivery",
+      schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
+      sessionTarget: "isolated",
+      wakeMode: "next-heartbeat",
+      payload: {
+        kind: "agentTurn",
+        message: "hello",
+      },
+      delivery: {
+        mode: "direct",
+        channel: "telegram",
+        to: "123",
+      },
+    });
+
+    const result = await cron.run(job.id, "force");
+    expect(result).toEqual({ ok: true, ran: true });
+    expect(enqueueSystemEvent).not.toHaveBeenCalled();
+
+    cron.stop();
+    await store.cleanup();
+  });
 });

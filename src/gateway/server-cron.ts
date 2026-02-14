@@ -75,6 +75,11 @@ export function buildGatewayCronService(params: {
         deps: { ...params.deps, runtime: defaultRuntime },
       });
     },
+    resolveCronAgentRuntime: (requestedAgentId) => {
+      const { agentId, cfg: runtimeConfig } = resolveCronAgent(requestedAgentId);
+      return { agentId, cfg: runtimeConfig };
+    },
+    outboundCliDeps: params.deps,
     runIsolatedAgentJob: async ({ job, message }) => {
       const { agentId, cfg: runtimeConfig } = resolveCronAgent(job.agentId);
       return await runCronIsolatedAgentTurn({

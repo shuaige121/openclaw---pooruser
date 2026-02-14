@@ -35,8 +35,12 @@ export function assertSupportedJobSpec(job: Pick<CronJob, "sessionTarget" | "pay
   if (job.sessionTarget === "main" && job.payload.kind !== "systemEvent") {
     throw new Error('main cron jobs require payload.kind="systemEvent"');
   }
-  if (job.sessionTarget === "isolated" && job.payload.kind !== "agentTurn") {
-    throw new Error('isolated cron jobs require payload.kind="agentTurn"');
+  if (
+    job.sessionTarget === "isolated" &&
+    job.payload.kind !== "agentTurn" &&
+    job.payload.kind !== "script"
+  ) {
+    throw new Error('isolated cron jobs require payload.kind="agentTurn" or "script"');
   }
 }
 
@@ -247,47 +251,61 @@ function mergeCronPayload(existing: CronPayload, patch: CronPayloadPatch): CronP
     return buildPayloadFromPatch(patch);
   }
 
-  if (patch.kind === "systemEvent") {
-    if (existing.kind !== "systemEvent") {
-      return buildPayloadFromPatch(patch);
-    }
+  if (patch.kind === "systemEvent" && existing.kind === "systemEvent") {
     const text = typeof patch.text === "string" ? patch.text : existing.text;
     return { kind: "systemEvent", text };
   }
 
-  if (existing.kind !== "agentTurn") {
-    return buildPayloadFromPatch(patch);
+  if (patch.kind === "agentTurn" && existing.kind === "agentTurn") {
+    const next: Extract<CronPayload, { kind: "agentTurn" }> = { ...existing };
+    if (typeof patch.message === "string") {
+      next.message = patch.message;
+    }
+    if (typeof patch.model === "string") {
+      next.model = patch.model;
+    }
+    if (typeof patch.thinking === "string") {
+      next.thinking = patch.thinking;
+    }
+    if (typeof patch.timeoutSeconds === "number") {
+      next.timeoutSeconds = patch.timeoutSeconds;
+    }
+    if (typeof patch.allowUnsafeExternalContent === "boolean") {
+      next.allowUnsafeExternalContent = patch.allowUnsafeExternalContent;
+    }
+    if (typeof patch.deliver === "boolean") {
+      next.deliver = patch.deliver;
+    }
+    if (typeof patch.channel === "string") {
+      next.channel = patch.channel;
+    }
+    if (typeof patch.to === "string") {
+      next.to = patch.to;
+    }
+    if (typeof patch.bestEffortDeliver === "boolean") {
+      next.bestEffortDeliver = patch.bestEffortDeliver;
+    }
+    return next;
   }
 
-  const next: Extract<CronPayload, { kind: "agentTurn" }> = { ...existing };
-  if (typeof patch.message === "string") {
-    next.message = patch.message;
+  if (patch.kind === "script" && existing.kind === "script") {
+    const next: Extract<CronPayload, { kind: "script" }> = { ...existing };
+    if (typeof patch.command === "string") {
+      next.command = patch.command;
+    }
+    if (typeof patch.timeoutSeconds === "number") {
+      next.timeoutSeconds = patch.timeoutSeconds;
+    }
+    if (typeof patch.cwd === "string") {
+      next.cwd = patch.cwd;
+    }
+    if (typeof patch.shell === "string") {
+      next.shell = patch.shell;
+    }
+    return next;
   }
-  if (typeof patch.model === "string") {
-    next.model = patch.model;
-  }
-  if (typeof patch.thinking === "string") {
-    next.thinking = patch.thinking;
-  }
-  if (typeof patch.timeoutSeconds === "number") {
-    next.timeoutSeconds = patch.timeoutSeconds;
-  }
-  if (typeof patch.allowUnsafeExternalContent === "boolean") {
-    next.allowUnsafeExternalContent = patch.allowUnsafeExternalContent;
-  }
-  if (typeof patch.deliver === "boolean") {
-    next.deliver = patch.deliver;
-  }
-  if (typeof patch.channel === "string") {
-    next.channel = patch.channel;
-  }
-  if (typeof patch.to === "string") {
-    next.to = patch.to;
-  }
-  if (typeof patch.bestEffortDeliver === "boolean") {
-    next.bestEffortDeliver = patch.bestEffortDeliver;
-  }
-  return next;
+
+  return buildPayloadFromPatch(patch);
 }
 
 function buildLegacyDeliveryPatch(
@@ -339,21 +357,34 @@ function buildPayloadFromPatch(patch: CronPayloadPatch): CronPayload {
     return { kind: "systemEvent", text: patch.text };
   }
 
-  if (typeof patch.message !== "string" || patch.message.length === 0) {
-    throw new Error('cron.update payload.kind="agentTurn" requires message');
+  if (patch.kind === "agentTurn") {
+    if (typeof patch.message !== "string" || patch.message.length === 0) {
+      throw new Error('cron.update payload.kind="agentTurn" requires message');
+    }
+
+    return {
+      kind: "agentTurn",
+      message: patch.message,
+      model: patch.model,
+      thinking: patch.thinking,
+      timeoutSeconds: patch.timeoutSeconds,
+      allowUnsafeExternalContent: patch.allowUnsafeExternalContent,
+      deliver: patch.deliver,
+      channel: patch.channel,
+      to: patch.to,
+      bestEffortDeliver: patch.bestEffortDeliver,
+    };
   }
 
+  if (typeof patch.command !== "string" || patch.command.length === 0) {
+    throw new Error('cron.update payload.kind="script" requires command');
+  }
   return {
-    kind: "agentTurn",
-    message: patch.message,
-    model: patch.model,
-    thinking: patch.thinking,
+    kind: "script",
+    command: patch.command,
     timeoutSeconds: patch.timeoutSeconds,
-    allowUnsafeExternalContent: patch.allowUnsafeExternalContent,
-    deliver: patch.deliver,
-    channel: patch.channel,
-    to: patch.to,
-    bestEffortDeliver: patch.bestEffortDeliver,
+    cwd: patch.cwd,
+    shell: patch.shell,
   };
 }
 
@@ -366,6 +397,8 @@ function mergeCronDelivery(
     channel: existing?.channel,
     to: existing?.to,
     bestEffort: existing?.bestEffort,
+    processModel: existing?.processModel,
+    processPrompt: existing?.processPrompt,
   };
 
   if (typeof patch.mode === "string") {
@@ -381,6 +414,14 @@ function mergeCronDelivery(
   }
   if (typeof patch.bestEffort === "boolean") {
     next.bestEffort = patch.bestEffort;
+  }
+  if ("processModel" in patch) {
+    const processModel = typeof patch.processModel === "string" ? patch.processModel.trim() : "";
+    next.processModel = processModel ? processModel : undefined;
+  }
+  if ("processPrompt" in patch) {
+    const processPrompt = typeof patch.processPrompt === "string" ? patch.processPrompt.trim() : "";
+    next.processPrompt = processPrompt ? processPrompt : undefined;
   }
 
   return next;
