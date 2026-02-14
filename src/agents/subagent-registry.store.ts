@@ -3,6 +3,10 @@ import type { SubagentRunRecord } from "./subagent-registry.js";
 import { STATE_DIR } from "../config/paths.js";
 import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
+import {
+  createSubagentAnnounceChannelContract,
+  normalizeSubagentAnnounceChannelContract,
+} from "./subagent-announce-contract.js";
 
 export type PersistedSubagentRegistryVersion = 1 | 2;
 
@@ -27,6 +31,7 @@ type LegacySubagentRunRecord = PersistedSubagentRunRecord & {
   announceHandled?: unknown;
   requesterChannel?: unknown;
   requesterAccountId?: unknown;
+  returnChannel?: unknown;
 };
 
 export function resolveSubagentRegistryPath(): string {
@@ -77,16 +82,38 @@ export function loadSubagentRegistryFromDisk(): Map<string, SubagentRunRecord> {
           typeof typed.requesterAccountId === "string" ? typed.requesterAccountId : undefined,
       },
     );
+    const normalizedReturnChannel = normalizeSubagentAnnounceChannelContract(
+      typed.returnChannel as {
+        contract?: unknown;
+        version?: unknown;
+        requesterSessionKey?: unknown;
+        requesterDisplayKey?: unknown;
+        requesterOrigin?: unknown;
+      },
+    );
+    const returnChannel =
+      normalizedReturnChannel ??
+      createSubagentAnnounceChannelContract({
+        requesterSessionKey:
+          typeof typed.requesterSessionKey === "string" ? typed.requesterSessionKey : "main",
+        requesterDisplayKey:
+          typeof typed.requesterDisplayKey === "string" ? typed.requesterDisplayKey : undefined,
+        requesterOrigin,
+      });
     const {
       announceCompletedAt: _announceCompletedAt,
       announceHandled: _announceHandled,
       requesterChannel: _channel,
       requesterAccountId: _accountId,
+      returnChannel: _returnChannel,
       ...rest
     } = typed;
     out.set(runId, {
       ...rest,
       requesterOrigin,
+      returnChannel,
+      requesterSessionKey: returnChannel.requesterSessionKey,
+      requesterDisplayKey: returnChannel.requesterDisplayKey,
       cleanupCompletedAt,
       cleanupHandled,
     });

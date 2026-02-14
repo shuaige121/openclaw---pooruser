@@ -64,6 +64,12 @@ describe("subagent registry persistence", () => {
     const run = parsed.runs?.["run-1"] as
       | {
           requesterOrigin?: { channel?: string; accountId?: string };
+          returnChannel?: {
+            contract?: string;
+            requesterSessionKey?: string;
+            requesterDisplayKey?: string;
+            requesterOrigin?: { channel?: string; accountId?: string };
+          };
         }
       | undefined;
     expect(run).toBeDefined();
@@ -73,6 +79,10 @@ describe("subagent registry persistence", () => {
     }
     expect(run?.requesterOrigin?.channel).toBe("whatsapp");
     expect(run?.requesterOrigin?.accountId).toBe("acct-main");
+    expect(run?.returnChannel?.contract).toBe("subagent_announce_channel");
+    expect(run?.returnChannel?.requesterSessionKey).toBe("agent:main:main");
+    expect(run?.returnChannel?.requesterDisplayKey).toBe("main");
+    expect(run?.returnChannel?.requesterOrigin?.channel).toBe("whatsapp");
 
     // Simulate a process restart: module re-import should load persisted runs
     // and trigger the announce flow once the run resolves.
@@ -90,6 +100,11 @@ describe("subagent registry persistence", () => {
       childRunId: string;
       requesterSessionKey: string;
       requesterOrigin?: { channel?: string; accountId?: string };
+      returnChannel?: {
+        contract?: string;
+        requesterSessionKey?: string;
+        requesterDisplayKey?: string;
+      };
       task: string;
       cleanup: string;
       label?: string;
@@ -98,6 +113,9 @@ describe("subagent registry persistence", () => {
     expect(first.childSessionKey).toBe("agent:main:subagent:test");
     expect(first.requesterOrigin?.channel).toBe("whatsapp");
     expect(first.requesterOrigin?.accountId).toBe("acct-main");
+    expect(first.returnChannel?.contract).toBe("subagent_announce_channel");
+    expect(first.returnChannel?.requesterSessionKey).toBe("agent:main:main");
+    expect(first.returnChannel?.requesterDisplayKey).toBe("main");
   });
 
   it("skips cleanup when cleanupHandled was persisted", async () => {
@@ -176,6 +194,9 @@ describe("subagent registry persistence", () => {
     expect(entry?.cleanupCompletedAt).toBe(9);
     expect(entry?.requesterOrigin?.channel).toBe("whatsapp");
     expect(entry?.requesterOrigin?.accountId).toBe("legacy-account");
+    expect(entry?.returnChannel?.contract).toBe("subagent_announce_channel");
+    expect(entry?.returnChannel?.requesterSessionKey).toBe("agent:main:main");
+    expect(entry?.returnChannel?.requesterDisplayKey).toBe("main");
 
     const after = JSON.parse(await fs.readFile(registryPath, "utf8")) as { version?: number };
     expect(after.version).toBe(2);

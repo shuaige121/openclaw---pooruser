@@ -78,7 +78,7 @@ describe("subagent announce formatting", () => {
     };
   });
 
-  it("sends instructional message to main agent with status and findings", async () => {
+  it("sends contractized return payload to the main agent", async () => {
     const { runSubagentAnnounceFlow } = await import("./subagent-announce.js");
     await runSubagentAnnounceFlow({
       childSessionKey: "agent:main:subagent:test",
@@ -99,12 +99,18 @@ describe("subagent announce formatting", () => {
     };
     const msg = call?.params?.message as string;
     expect(call?.params?.sessionKey).toBe("agent:main:main");
-    expect(msg).toContain("subagent task");
-    expect(msg).toContain("failed");
-    expect(msg).toContain("boom");
-    expect(msg).toContain("Findings:");
-    expect(msg).toContain("raw subagent reply");
-    expect(msg).toContain("Stats:");
+    expect(msg).toContain("Subagent return contract");
+    expect(msg).toContain("subagent_announce_result");
+    const contractLine = msg.split("\n")[1];
+    const parsed = contractLine ? (JSON.parse(contractLine) as Record<string, unknown>) : {};
+    expect(parsed.contract).toBe("subagent_announce_result");
+    expect(parsed.announceType).toBe("subagent task");
+    expect(parsed.task).toBe("do thing");
+    expect(parsed.status).toBe("error");
+    expect(parsed.statusLabel).toBe("failed: boom");
+    expect(parsed.findings).toBe("raw subagent reply");
+    expect(String(parsed.stats ?? "")).toContain("Stats:");
+    expect(parsed.error).toBe("boom");
   });
 
   it("includes success status when outcome is ok", async () => {
