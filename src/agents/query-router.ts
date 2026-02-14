@@ -437,8 +437,12 @@ function pickModel(models: string[], currentProvider: string): ModelRef | null {
   if (models.length === 0) {
     return null;
   }
-  // Pick the first configured model for the tier.
-  const raw = models[0];
+  // Prefer a model whose provider matches the agent's current provider.
+  const providerMatch = models.find((m) => {
+    const slash = m.indexOf("/");
+    return slash !== -1 && m.slice(0, slash).trim() === currentProvider;
+  });
+  const raw = providerMatch ?? models[0];
   return parseModelRef(raw, currentProvider);
 }
 
