@@ -248,6 +248,41 @@ WhatsApp / Telegram / Slack / Discord / Google Chat / Signal / iMessage / BlueBu
 - **[Voice Wake](https://docs.openclaw.ai/nodes/voicewake) + [Talk Mode](https://docs.openclaw.ai/nodes/talk)** — always‑on speech and continuous conversation.
 - **[Nodes](https://docs.openclaw.ai/nodes)** — Canvas, camera snap/clip, screen record, `location.get`, notifications, plus macOS‑only `system.run`/`system.notify`.
 
+## Console (Web Dashboard)
+
+OpenClaw includes a built-in web console at `workspace/canvas/console/` for managing the AI assistant through a browser UI.
+
+**Start:** `node workspace/canvas/console/server.js` → `http://localhost:3939`
+
+### 5 Tabs
+
+| Tab           | Description                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| Overview      | Identity card, model management, agent config, channels, cron jobs, contacts, timeline, tools       |
+| Token Monitor | Usage trend charts (30 days), model distribution doughnut, per-agent bar chart, top consumers table |
+| Cron Jobs     | Create/edit/toggle/delete scheduled tasks with cron expressions                                     |
+| File Editor   | CodeMirror editor for workspace .md/.json files                                                     |
+| _(Workflow)_  | Drawflow visual editor (planned)                                                                    |
+
+### Key Features
+
+- **Token Budget Panel** — Edit `router.tokenBudget` (daily / perSession / warningThreshold / onExceeded) with live usage progress bar
+- **Router Tiers Editor** — Manage fast / balanced / capable model tiers, adjust maxComplexity thresholds, toggle routing overrides
+- **Agent Working Hours** — Set per-agent active time windows (start/end/timezone)
+- **Per-Model Config** — Edit alias, streaming toggle, and provider params per model
+- **Inline Agent Table** — Quick-edit maxContextTokens, dailyBudget, working hours, and primary model from the Monitor tab
+
+### API Endpoints
+
+| Method  | Path              | Description                         |
+| ------- | ----------------- | ----------------------------------- |
+| GET/PUT | `/api/config`     | Read/write `openclaw.json`          |
+| GET/PUT | `/api/dashboard`  | Identity, contacts, tools, timeline |
+| GET/PUT | `/api/cron`       | Cron job configuration              |
+| GET     | `/api/sessions`   | Token usage statistics              |
+| GET     | `/api/files`      | List editable workspace files       |
+| GET/PUT | `/api/file?path=` | Read/write individual files         |
+
 ## Tailscale access (Gateway dashboard)
 
 OpenClaw can auto-configure Tailscale **Serve** (tailnet-only) or **Funnel** (public) while the Gateway stays bound to loopback. Configure `gateway.tailscale.mode`:
