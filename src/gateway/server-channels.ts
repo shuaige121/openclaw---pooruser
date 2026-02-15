@@ -4,9 +4,10 @@ import type { createSubsystemLogger } from "../logging/subsystem.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { type ChannelId, getChannelPlugin, listChannelPlugins } from "../channels/plugins/index.js";
+import { isTruthyEnvValue } from "../infra/env.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resetDirectoryCache } from "../infra/outbound/target-resolver.js";
-import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
 
 export type ChannelRuntimeSnapshot = {
   channels: Partial<Record<ChannelId, ChannelAccountSnapshot>>;
@@ -44,6 +45,59 @@ function resolveDefaultRuntime(channelId: ChannelId): ChannelAccountSnapshot {
 
 function cloneDefaultRuntime(channelId: ChannelId, accountId: string): ChannelAccountSnapshot {
   return { ...resolveDefaultRuntime(channelId), accountId };
+}
+
+function listConfiguredAccountIdsFromConfig(cfg: OpenClawConfig, channelId: ChannelId): string[] {
+  const channels = cfg.channels as Record<string, unknown> | undefined;
+  const channelConfig = channels?.[channelId];
+  if (!channelConfig || typeof channelConfig !== "object" || Array.isArray(channelConfig)) {
+    return [];
+  }
+  const accounts = (channelConfig as { accounts?: unknown }).accounts;
+  if (!accounts || typeof accounts !== "object" || Array.isArray(accounts)) {
+    return [];
+  }
+  const ids = new Set<string>();
+  for (const key of Object.keys(accounts)) {
+    if (!key) {
+      continue;
+    }
+    ids.add(normalizeAccountId(key));
+  }
+  return [...ids].toSorted((a, b) => a.localeCompare(b));
+}
+
+function resolveStartupAccountIds(params: {
+  cfg: OpenClawConfig;
+  channelId: ChannelId;
+  listedAccountIds: string[];
+  log: SubsystemLogger;
+}): string[] {
+  const listed = Array.from(
+    new Set(
+      params.listedAccountIds
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .map((id) => normalizeAccountId(id)),
+    ),
+  ).toSorted((a, b) => a.localeCompare(b));
+  if (params.channelId !== "telegram") {
+    return listed;
+  }
+  const hasOnlyDefault = listed.length === 1 && listed[0] === DEFAULT_ACCOUNT_ID;
+  if (!hasOnlyDefault) {
+    return listed;
+  }
+  const configuredIds = listConfiguredAccountIdsFromConfig(params.cfg, params.channelId);
+  if (configuredIds.length === 0) {
+    return listed;
+  }
+  if (isTruthyEnvValue(process.env.OPENCLAW_DEBUG_TELEGRAM_ACCOUNTS)) {
+    params.log.debug?.(
+      `[telegram] startup account fallback: plugin listed [${listed.join(", ")}], config listed [${configuredIds.join(", ")}]`,
+    );
+  }
+  return configuredIds;
 }
 
 type ChannelManagerOptions = {
@@ -102,7 +156,15 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
     const cfg = loadConfig();
     resetDirectoryCache({ channel: channelId, accountId });
     const store = getStore(channelId);
-    const accountIds = accountId ? [accountId] : plugin.config.listAccountIds(cfg);
+    const listedAccountIds = accountId ? [accountId] : plugin.config.listAccountIds(cfg);
+    const accountIds = accountId
+      ? listedAccountIds
+      : resolveStartupAccountIds({
+          cfg,
+          channelId,
+          listedAccountIds,
+          log: channelLogs[channelId],
+        });
     if (accountIds.length === 0) {
       return;
     }
@@ -185,7 +247,14 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
     const knownIds = new Set<string>([
       ...store.aborts.keys(),
       ...store.tasks.keys(),
-      ...(plugin ? plugin.config.listAccountIds(cfg) : []),
+      ...(plugin
+        ? resolveStartupAccountIds({
+            cfg,
+            channelId,
+            listedAccountIds: plugin.config.listAccountIds(cfg),
+            log: channelLogs[channelId],
+          })
+        : []),
     ]);
     if (accountId) {
       knownIds.clear();
@@ -265,7 +334,12 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
     const channelAccounts: ChannelRuntimeSnapshot["channelAccounts"] = {};
     for (const plugin of listChannelPlugins()) {
       const store = getStore(plugin.id);
-      const accountIds = plugin.config.listAccountIds(cfg);
+      const accountIds = resolveStartupAccountIds({
+        cfg,
+        channelId: plugin.id,
+        listedAccountIds: plugin.config.listAccountIds(cfg),
+        log: channelLogs[plugin.id],
+      });
       const defaultAccountId = resolveChannelDefaultAccountId({
         plugin,
         cfg,

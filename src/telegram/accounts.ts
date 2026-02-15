@@ -23,39 +23,51 @@ export type ResolvedTelegramAccount = {
 function listConfiguredAccountIds(cfg: OpenClawConfig): string[] {
   const accounts = cfg.channels?.telegram?.accounts;
   if (!accounts || typeof accounts !== "object") {
+    debugAccounts("configuredIds", { rawKeys: [], normalized: [] });
     return [];
   }
+  const rawKeys = Object.keys(accounts).filter(Boolean);
   const ids = new Set<string>();
-  for (const key of Object.keys(accounts)) {
-    if (!key) {
-      continue;
-    }
+  for (const key of rawKeys) {
     ids.add(normalizeAccountId(key));
   }
-  return [...ids];
+  const normalized = [...ids];
+  debugAccounts("configuredIds", { rawKeys, normalized });
+  return normalized;
 }
 
 export function listTelegramAccountIds(cfg: OpenClawConfig): string[] {
-  const ids = Array.from(
-    new Set([...listConfiguredAccountIds(cfg), ...listBoundAccountIds(cfg, "telegram")]),
+  const configuredIds = listConfiguredAccountIds(cfg);
+  const boundIds = listBoundAccountIds(cfg, "telegram");
+  const ids = Array.from(new Set([...configuredIds, ...boundIds])).toSorted((a, b) =>
+    a.localeCompare(b),
   );
-  debugAccounts("listTelegramAccountIds", ids);
+  debugAccounts("listTelegramAccountIds", { configuredIds, boundIds, ids });
   if (ids.length === 0) {
     return [DEFAULT_ACCOUNT_ID];
   }
-  return ids.toSorted((a, b) => a.localeCompare(b));
+  return ids;
 }
 
 export function resolveDefaultTelegramAccountId(cfg: OpenClawConfig): string {
   const boundDefault = resolveDefaultAgentBoundAccountId(cfg, "telegram");
   if (boundDefault) {
+    debugAccounts("resolveDefaultTelegramAccountId", {
+      source: "binding",
+      accountId: boundDefault,
+    });
     return boundDefault;
   }
   const ids = listTelegramAccountIds(cfg);
-  if (ids.includes(DEFAULT_ACCOUNT_ID)) {
-    return DEFAULT_ACCOUNT_ID;
-  }
-  return ids[0] ?? DEFAULT_ACCOUNT_ID;
+  const resolved = ids.includes(DEFAULT_ACCOUNT_ID)
+    ? DEFAULT_ACCOUNT_ID
+    : (ids[0] ?? DEFAULT_ACCOUNT_ID);
+  debugAccounts("resolveDefaultTelegramAccountId", {
+    source: "list",
+    accountIds: ids,
+    accountId: resolved,
+  });
+  return resolved;
 }
 
 function resolveAccountConfig(
@@ -111,6 +123,12 @@ export function resolveTelegramAccount(params: {
 
   const normalized = normalizeAccountId(params.accountId);
   const primary = resolve(normalized);
+  debugAccounts("resolveTelegramAccount.primary", {
+    requestedAccountId: params.accountId ?? null,
+    normalizedAccountId: normalized,
+    resolvedAccountId: primary.accountId,
+    tokenSource: primary.tokenSource,
+  });
   if (hasExplicitAccountId) {
     return primary;
   }
@@ -126,6 +144,10 @@ export function resolveTelegramAccount(params: {
     return primary;
   }
   const fallback = resolve(fallbackId);
+  debugAccounts("resolveTelegramAccount.fallback", {
+    fallbackAccountId: fallbackId,
+    tokenSource: fallback.tokenSource,
+  });
   if (fallback.tokenSource === "none") {
     return primary;
   }

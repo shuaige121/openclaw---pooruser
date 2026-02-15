@@ -18,6 +18,13 @@ const QueryRouterTierSchema = z
   .object({
     models: z.array(z.string()),
     maxComplexity: z.number().min(0).max(1).optional(),
+    tools: z
+      .object({
+        allow: z.array(z.string()).optional(),
+        deny: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -36,6 +43,7 @@ const QueryRouterSchema = z
       .object({
         daily: z.number().int().positive().optional(),
         perSession: z.number().int().positive().optional(),
+        perRequest: z.number().int().positive().optional(),
         warningThreshold: z.number().min(0).max(1).optional(),
         onExceeded: z
           .union([z.literal("downgrade"), z.literal("block"), z.literal("warn")])
