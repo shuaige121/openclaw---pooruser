@@ -2,11 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { AuthProfileStore } from "./auth-profiles.js";
 import { saveAuthProfileStore } from "./auth-profiles.js";
 import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
+import { resetCircuitBreakersForTest } from "./circuit-breaker.js";
 import { runWithModelFallback } from "./model-fallback.js";
 
 function makeCfg(overrides: Partial<OpenClawConfig> = {}): OpenClawConfig {
@@ -24,6 +25,10 @@ function makeCfg(overrides: Partial<OpenClawConfig> = {}): OpenClawConfig {
 }
 
 describe("runWithModelFallback", () => {
+  beforeEach(() => {
+    resetCircuitBreakersForTest();
+  });
+
   it("does not fall back on non-auth errors", async () => {
     const cfg = makeCfg();
     const run = vi.fn().mockRejectedValueOnce(new Error("bad request")).mockResolvedValueOnce("ok");

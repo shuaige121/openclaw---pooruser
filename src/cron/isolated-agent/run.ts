@@ -61,6 +61,7 @@ import {
   pickSummaryFromOutput,
   pickSummaryFromPayloads,
   resolveHeartbeatAckMaxChars,
+  resolveHeartbeatRunOverrides,
 } from "./helpers.js";
 import { resolveCronSession } from "./session.js";
 
@@ -134,12 +135,23 @@ export async function runCronIsolatedAgentTurn(params: {
   } else if (overrideModel) {
     agentCfg.model = overrideModel;
   }
+  const baseSessionKey = (params.sessionKey?.trim() || `cron:${params.job.id}`).trim();
+  const heartbeatOverrides = resolveHeartbeatRunOverrides({
+    agentCfg,
+    message: params.message,
+    sessionKey: baseSessionKey,
+  });
+  if (heartbeatOverrides.model) {
+    agentCfg.model = { primary: heartbeatOverrides.model };
+  }
+  if (heartbeatOverrides.tools) {
+    agentCfg.tools = heartbeatOverrides.tools;
+  }
   const cfgWithAgentDefaults: OpenClawConfig = {
     ...params.cfg,
     agents: Object.assign({}, params.cfg.agents, { defaults: agentCfg }),
   };
 
-  const baseSessionKey = (params.sessionKey?.trim() || `cron:${params.job.id}`).trim();
   const agentSessionKey = buildAgentMainSessionKey({
     agentId,
     mainKey: baseSessionKey,

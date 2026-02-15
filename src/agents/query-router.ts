@@ -374,6 +374,7 @@ function normalizeRatio(value: unknown): number | undefined {
 
 function deriveBudgetCap(params: {
   routerCfg: QueryRouterConfig;
+  message: string;
   sessionTotalTokens?: number;
   dailyTotalTokens?: number;
 }): { capTier?: TierName; signals: string[] } {
@@ -386,8 +387,14 @@ function deriveBudgetCap(params: {
   const warningThreshold = normalizeRatio(budget.warningThreshold) ?? 0.8;
   const perSessionCap = normalizePositiveNumber(budget.perSession);
   const dailyCap = normalizePositiveNumber(budget.daily);
+  const perRequestCap = normalizePositiveNumber(budget.perRequest);
   const sessionUsed = normalizePositiveNumber(params.sessionTotalTokens);
   const dailyUsed = normalizePositiveNumber(params.dailyTotalTokens);
+  const perRequestExceeded =
+    perRequestCap !== undefined && params.message.length * 4 > perRequestCap;
+  if (perRequestExceeded) {
+    signals.push("budget:perRequest:exceeded");
+  }
 
   const sessionRatio =
     perSessionCap !== undefined && sessionUsed !== undefined
@@ -397,6 +404,9 @@ function deriveBudgetCap(params: {
     dailyCap !== undefined && dailyUsed !== undefined ? dailyUsed / dailyCap : undefined;
   const ratios = [sessionRatio, dailyRatio].filter((v): v is number => typeof v === "number");
   if (ratios.length === 0) {
+    if (perRequestExceeded) {
+      return { capTier: "fast", signals };
+    }
     return { signals };
   }
 
@@ -405,6 +415,10 @@ function deriveBudgetCap(params: {
   }
   if (dailyRatio !== undefined) {
     signals.push(`budget:daily:${dailyRatio.toFixed(2)}`);
+  }
+
+  if (perRequestExceeded) {
+    return { capTier: "fast", signals };
   }
 
   const highestRatio = Math.max(...ratios);
@@ -490,6 +504,7 @@ export function routeQuery(params: RouteQueryParams): RouteResult | null {
 
   const budget = deriveBudgetCap({
     routerCfg,
+    message,
     sessionTotalTokens: params.sessionTotalTokens,
     dailyTotalTokens: params.dailyTotalTokens,
   });

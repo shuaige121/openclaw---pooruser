@@ -295,6 +295,61 @@ services:
     expect(result!.signals).toContain("budget:warning");
   });
 
+  it("caps to fast tier when per-request token budget is exceeded", () => {
+    const message = `请帮我实现以下系统：
+1. 设计认证服务
+2. 设计订单服务
+3. 设计支付服务
+4. 设计网关与重试机制
+
+\`\`\`typescript
+interface ServiceConfig {
+  name: string;
+  dependencies: string[];
+}
+\`\`\``;
+
+    const baseline = route(message);
+    expect(baseline).not.toBeNull();
+    expect(baseline!.tier).not.toBe("fast");
+
+    const result = route(message, {
+      cfg: makeRouterCfg({
+        tokenBudget: { perRequest: 200, warningThreshold: 0.8, onExceeded: "warn" },
+      }),
+    });
+    expect(result).not.toBeNull();
+    expect(result!.tier).toBe("fast");
+    expect(result!.signals).toContain("budget:perRequest:exceeded");
+  });
+
+  it("does not cap by per-request budget when estimate is within limit", () => {
+    const message = `请帮我实现以下系统：
+1. 设计认证服务
+2. 设计订单服务
+3. 设计支付服务
+4. 设计网关与重试机制
+
+\`\`\`typescript
+interface ServiceConfig {
+  name: string;
+  dependencies: string[];
+}
+\`\`\``;
+
+    const baseline = route(message);
+    expect(baseline).not.toBeNull();
+
+    const result = route(message, {
+      cfg: makeRouterCfg({
+        tokenBudget: { perRequest: 100000, warningThreshold: 0.8, onExceeded: "warn" },
+      }),
+    });
+    expect(result).not.toBeNull();
+    expect(result!.tier).toBe(baseline!.tier);
+    expect(result!.signals).not.toContain("budget:perRequest:exceeded");
+  });
+
   it("downgrades to fast tier when token budget is exceeded", () => {
     const result = route("帮我写一份复杂系统设计文档并附代码示例", {
       cfg: makeRouterCfg({

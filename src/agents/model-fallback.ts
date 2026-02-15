@@ -5,6 +5,7 @@ import {
   isProfileInCooldown,
   resolveAuthProfileOrder,
 } from "./auth-profiles.js";
+import { getCircuitBreaker } from "./circuit-breaker.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import {
   coerceToFailoverError,
@@ -29,10 +30,44 @@ type FallbackAttempt = {
   provider: string;
   model: string;
   error: string;
-  reason?: FailoverReason;
+  reason?: FailoverReason | "circuit_open";
   status?: number;
   code?: string;
 };
+
+type ResolvedCircuitBreakerConfig = {
+  maxFailures: number;
+  cooldownMs: number;
+  halfOpenAfterMs: number;
+  maxTripsBeforeRollback: number;
+};
+
+const DEFAULT_CIRCUIT_BREAKER_CONFIG: ResolvedCircuitBreakerConfig = {
+  maxFailures: 3,
+  cooldownMs: 60_000,
+  halfOpenAfterMs: 30_000,
+  maxTripsBeforeRollback: 3,
+};
+
+function resolveCircuitBreakerConfig(
+  cfg: OpenClawConfig | undefined,
+): ResolvedCircuitBreakerConfig {
+  const raw = (cfg?.agents?.defaults as { circuitBreaker?: Record<string, unknown> } | undefined)
+    ?.circuitBreaker;
+
+  const numberOr = (value: unknown, fallback: number): number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
+  return {
+    maxFailures: numberOr(raw?.maxFailures, DEFAULT_CIRCUIT_BREAKER_CONFIG.maxFailures),
+    cooldownMs: numberOr(raw?.cooldownMs, DEFAULT_CIRCUIT_BREAKER_CONFIG.cooldownMs),
+    halfOpenAfterMs: numberOr(raw?.halfOpenAfterMs, DEFAULT_CIRCUIT_BREAKER_CONFIG.halfOpenAfterMs),
+    maxTripsBeforeRollback: numberOr(
+      raw?.maxTripsBeforeRollback,
+      DEFAULT_CIRCUIT_BREAKER_CONFIG.maxTripsBeforeRollback,
+    ),
+  };
+}
 
 /**
  * Fallback abort check. Only treats explicit AbortError names as user aborts.
@@ -236,6 +271,7 @@ export async function runWithModelFallback<T>(params: {
   const authStore = params.cfg
     ? ensureAuthProfileStore(params.agentDir, { allowKeychainPrompt: false })
     : null;
+  const circuitBreakerConfig = resolveCircuitBreakerConfig(params.cfg);
   const attempts: FallbackAttempt[] = [];
   let lastError: unknown;
 
@@ -260,8 +296,24 @@ export async function runWithModelFallback<T>(params: {
         continue;
       }
     }
+    const circuitBreaker = getCircuitBreaker(modelKey(candidate.provider, candidate.model), {
+      ...circuitBreakerConfig,
+      agentDir: params.agentDir,
+    });
+
+    if (!circuitBreaker.canAttempt()) {
+      attempts.push({
+        provider: candidate.provider,
+        model: candidate.model,
+        error: `Circuit breaker open for ${candidate.provider}/${candidate.model}`,
+        reason: "circuit_open",
+      });
+      continue;
+    }
+
     try {
       const result = await params.run(candidate.provider, candidate.model);
+      circuitBreaker.recordSuccess();
       return {
         result,
         provider: candidate.provider,
@@ -278,9 +330,11 @@ export async function runWithModelFallback<T>(params: {
           model: candidate.model,
         }) ?? err;
       if (!isFailoverError(normalized)) {
+        circuitBreaker.recordFailure();
         throw err;
       }
 
+      circuitBreaker.recordFailure();
       lastError = normalized;
       const described = describeFailoverError(normalized);
       attempts.push({

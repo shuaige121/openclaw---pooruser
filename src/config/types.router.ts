@@ -29,6 +29,8 @@ export type QueryRouterConfig = {
     daily?: number;
     /** Per-session token cap. */
     perSession?: number;
+    /** Per-request token cap (approximate, based on input length). */
+    perRequest?: number;
     /** Warning threshold as 0-1 ratio (default: 0.8). */
     warningThreshold?: number;
     /** Action when budget is exceeded. */
