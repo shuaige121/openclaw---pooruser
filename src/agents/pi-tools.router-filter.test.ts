@@ -3,13 +3,13 @@ import type { OpenClawConfig } from "../config/config.js";
 import "./test-helpers/fast-coding-tools.js";
 import { createOpenClawCodingTools } from "./pi-tools.js";
 
-function getToolNames(cfg: OpenClawConfig, currentMessage: string) {
-  const tools = createOpenClawCodingTools({ config: cfg, currentMessage });
+function getToolNames(cfg: OpenClawConfig, currentMessage: string, sessionKey?: string) {
+  const tools = createOpenClawCodingTools({ config: cfg, currentMessage, sessionKey });
   return tools.map((tool) => tool.name);
 }
 
-function hasTool(name: string, cfg: OpenClawConfig, currentMessage: string) {
-  return getToolNames(cfg, currentMessage).includes(name);
+function hasTool(name: string, cfg: OpenClawConfig, currentMessage: string, sessionKey?: string) {
+  return getToolNames(cfg, currentMessage, sessionKey).includes(name);
 }
 
 const BASE_CONFIG: OpenClawConfig = {
@@ -167,5 +167,30 @@ describe("router tool filter", () => {
     expect(hasTool("message", cfg, "hi")).toBe(true);
     expect(hasTool("exec", cfg, "hi")).toBe(false);
     expect(hasTool("web_search", cfg, "hi")).toBe(false);
+  });
+
+  it('skips router filtering when agent tools.profile is "full"', () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          router: BASE_CONFIG.agents!.defaults!.router,
+        },
+        list: [
+          {
+            id: "owner",
+            workspace: "~/openclaw",
+            tools: {
+              profile: "full",
+            },
+          },
+        ],
+      },
+    };
+    const tools = getToolNames(cfg, "hi", "agent:owner:main");
+
+    expect(tools).toContain("message");
+    expect(tools).toContain("exec");
+    expect(tools).toContain("cron");
+    expect(tools).toContain("browser");
   });
 });

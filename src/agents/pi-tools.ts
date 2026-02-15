@@ -185,8 +185,12 @@ function applyRouterToolFilter(params: {
   tools: AnyAgentTool[];
   currentMessage?: string;
   config?: OpenClawConfig;
+  agentToolProfile?: string;
 }): AnyAgentTool[] {
-  const { tools, currentMessage, config } = params;
+  const { tools, currentMessage, config, agentToolProfile } = params;
+  if (agentToolProfile === "full") {
+    return tools;
+  }
   const routerCfg = config?.agents?.defaults?.router;
   if (!routerCfg?.enabled || !currentMessage?.trim()) {
     return tools;
@@ -568,6 +572,7 @@ export function createOpenClawCodingTools(options?: {
     tools: gated,
     currentMessage: options?.currentMessage,
     config: options?.config,
+    agentToolProfile: profile,
   });
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
