@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ReplyPayload } from "../auto-reply/types.js";
@@ -33,6 +34,7 @@ import {
   resolveStorePath,
   saveSessionStore,
   updateSessionStore,
+  updateSessionStoreEntry,
 } from "../config/sessions.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getQueueSize } from "../process/command-queue.js";
@@ -87,6 +89,14 @@ export type HeartbeatSummary = {
 };
 
 const DEFAULT_HEARTBEAT_TARGET = "last";
+
+/**
+ * When a heartbeat reply is HEARTBEAT_OK (no actionable content) and the
+ * session's totalTokens exceeds this threshold, the session is reset to
+ * prevent unbounded context growth. Without this, idle heartbeats accumulate
+ * context indefinitely because memory-flush is skipped for heartbeats.
+ */
+export const HEARTBEAT_CONTEXT_RESET_THRESHOLD = 50_000;
 
 // Prompt used when an async exec has completed and the result should be relayed to the user.
 // This overrides the standard heartbeat prompt to ensure the model responds with the exec result
@@ -309,6 +319,55 @@ function resolveHeartbeatSession(
   return { sessionKey: mainSessionKey, storePath, store, entry: mainEntry };
 }
 
+/**
+ * After a HEARTBEAT_OK reply, check if the session context has grown past
+ * the threshold. If so, reset the session (new sessionId + clear token
+ * counters) so the next heartbeat starts with a fresh, small context.
+ * This prevents unbounded context inflation that burns cache costs even
+ * when the heartbeat produces no actionable output.
+ */
+async function resetHeartbeatSessionIfBloated(params: {
+  storePath: string;
+  sessionKey: string;
+}): Promise<boolean> {
+  try {
+    const result = await updateSessionStoreEntry({
+      storePath: params.storePath,
+      sessionKey: params.sessionKey,
+      update: async (entry) => {
+        const totalTokens = entry.totalTokens;
+        if (
+          typeof totalTokens !== "number" ||
+          !Number.isFinite(totalTokens) ||
+          totalTokens < HEARTBEAT_CONTEXT_RESET_THRESHOLD
+        ) {
+          return null; // no reset needed
+        }
+        log.info("heartbeat: resetting bloated session", {
+          sessionKey: params.sessionKey,
+          totalTokens,
+          threshold: HEARTBEAT_CONTEXT_RESET_THRESHOLD,
+        });
+        return {
+          sessionId: crypto.randomUUID(),
+          sessionFile: undefined,
+          compactionCount: 0,
+          memoryFlushCompactionCount: undefined,
+          memoryFlushAt: undefined,
+          totalTokens: undefined,
+          inputTokens: undefined,
+          outputTokens: undefined,
+          contextTokens: undefined,
+        };
+      },
+    });
+    return result !== null;
+  } catch (err) {
+    log.warn(`heartbeat: failed to reset bloated session: ${String(err)}`);
+    return false;
+  }
+}
+
 function resolveHeartbeatReplyPayload(
   replyResult: ReplyPayload | ReplyPayload[] | undefined,
 ): ReplyPayload | undefined {
@@ -453,6 +512,28 @@ export async function runHeartbeatOnce(opts: {
   }
 
   const { entry, sessionKey, storePath } = resolveHeartbeatSession(cfg, agentId, heartbeat);
+
+  // Cost guard: skip heartbeat when session context is too large to avoid runaway costs.
+  // Uses totalTokens from the session store as a proxy for context size.
+  const costGuardMaxTokens = heartbeat?.costGuard?.maxContextTokens;
+  if (typeof costGuardMaxTokens === "number" && costGuardMaxTokens > 0) {
+    const sessionTokens = entry?.totalTokens ?? 0;
+    if (sessionTokens > costGuardMaxTokens) {
+      log.warn("heartbeat: cost guard triggered, skipping", {
+        sessionTokens,
+        maxContextTokens: costGuardMaxTokens,
+        sessionKey,
+        agentId,
+      });
+      emitHeartbeatEvent({
+        status: "skipped",
+        reason: "cost-guard",
+        durationMs: (opts.deps?.nowMs?.() ?? Date.now()) - startedAt,
+      });
+      return { status: "skipped", reason: "cost-guard" };
+    }
+  }
+
   const previousUpdatedAt = entry?.updatedAt;
   const delivery = resolveHeartbeatDeliveryTarget({ cfg, entry, heartbeat });
   const heartbeatAccountId = heartbeat?.accountId?.trim();
@@ -564,6 +645,7 @@ export async function runHeartbeatOnce(opts: {
         sessionKey,
         updatedAt: previousUpdatedAt,
       });
+      await resetHeartbeatSessionIfBloated({ storePath, sessionKey });
       const okSent = await maybeSendHeartbeatOk();
       emitHeartbeatEvent({
         status: "ok-empty",
@@ -598,6 +680,7 @@ export async function runHeartbeatOnce(opts: {
         sessionKey,
         updatedAt: previousUpdatedAt,
       });
+      await resetHeartbeatSessionIfBloated({ storePath, sessionKey });
       const okSent = await maybeSendHeartbeatOk();
       emitHeartbeatEvent({
         status: "ok-token",
@@ -614,8 +697,11 @@ export async function runHeartbeatOnce(opts: {
     const mediaUrls =
       replyPayload.mediaUrls ?? (replyPayload.mediaUrl ? [replyPayload.mediaUrl] : []);
 
-    // Suppress duplicate heartbeats (same payload) within a short window.
-    // This prevents "nagging" when nothing changed but the model repeats the same items.
+    // Suppress duplicate heartbeats within a cooldown window.
+    // Uses first 100 chars as a digest to catch same-topic messages even when
+    // the LLM rephrases slightly (e.g. repeated OAuth expiry warnings).
+    const HEARTBEAT_DEDUP_CHARS = 100;
+    const HEARTBEAT_DEDUP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
     const prevHeartbeatText =
       typeof entry?.lastHeartbeatText === "string" ? entry.lastHeartbeatText : "";
     const prevHeartbeatAt =
@@ -624,9 +710,10 @@ export async function runHeartbeatOnce(opts: {
       !shouldSkipMain &&
       !mediaUrls.length &&
       Boolean(prevHeartbeatText.trim()) &&
-      normalized.text.trim() === prevHeartbeatText.trim() &&
+      normalized.text.trim().slice(0, HEARTBEAT_DEDUP_CHARS) ===
+        prevHeartbeatText.trim().slice(0, HEARTBEAT_DEDUP_CHARS) &&
       typeof prevHeartbeatAt === "number" &&
-      startedAt - prevHeartbeatAt < 24 * 60 * 60 * 1000;
+      startedAt - prevHeartbeatAt < HEARTBEAT_DEDUP_COOLDOWN_MS;
 
     if (isDuplicateMain) {
       await restoreHeartbeatUpdatedAt({

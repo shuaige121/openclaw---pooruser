@@ -27,6 +27,12 @@ export const HeartbeatSchema = z
     accountId: z.string().optional(),
     prompt: z.string().optional(),
     ackMaxChars: z.number().int().nonnegative().optional(),
+    costGuard: z
+      .object({
+        maxContextTokens: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
     tools: z
       .object({
         profile: z

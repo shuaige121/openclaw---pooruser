@@ -202,6 +202,11 @@ export type AgentDefaultsConfig = {
      * Default: false (only the final heartbeat payload is delivered).
      */
     includeReasoning?: boolean;
+    /** Cost guard: skip heartbeat when session context exceeds token threshold. */
+    costGuard?: {
+      /** Max session totalTokens before heartbeat is skipped (default: none / disabled). */
+      maxContextTokens?: number;
+    };
   };
   /** Max concurrent agent runs across all conversations. Default: 1 (sequential). */
   maxConcurrent?: number;
