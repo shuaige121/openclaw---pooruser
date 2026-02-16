@@ -4,6 +4,7 @@ import {
   parseModelRef,
   resolveModelRefFromString,
   resolveConfiguredModelRef,
+  resolveDefaultModelForAgent,
   buildModelAliasIndex,
   normalizeProviderId,
   modelKey,
@@ -146,6 +147,71 @@ describe("model-selection", () => {
         defaultModel: "gpt-4",
       });
       expect(result).toEqual({ provider: "openai", model: "gpt-4" });
+    });
+  });
+
+  describe("resolveDefaultModelForAgent", () => {
+    it("uses per-agent model primary with non-default provider", () => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            model: {
+              primary: "anthropic/claude-opus-4-6",
+            },
+          },
+          list: [
+            {
+              id: "maple-education",
+              model: {
+                primary: "openai-codex/gpt-5.2",
+                fallbacks: ["anthropic/claude-haiku-4-5"],
+              },
+            },
+          ],
+        },
+      } as OpenClawConfig;
+
+      const result = resolveDefaultModelForAgent({ cfg, agentId: "maple-education" });
+      expect(result.provider).toBe("openai-codex");
+      expect(result.model).toBe("gpt-5.2");
+    });
+
+    it("falls back to global default when agent has no model config", () => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            model: {
+              primary: "anthropic/claude-opus-4-6",
+            },
+          },
+          list: [
+            {
+              id: "basic-agent",
+            },
+          ],
+        },
+      } as OpenClawConfig;
+
+      const result = resolveDefaultModelForAgent({ cfg, agentId: "basic-agent" });
+      expect(result.provider).toBe("anthropic");
+      expect(result.model).toBe("claude-opus-4-6");
+    });
+
+    it("uses per-agent string model with provider prefix", () => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          list: [
+            {
+              id: "openai-agent",
+              model: "openai/gpt-4o",
+            },
+          ],
+        },
+      } as OpenClawConfig;
+
+      const result = resolveDefaultModelForAgent({ cfg, agentId: "openai-agent" });
+      expect(result.provider).toBe("openai");
+      expect(result.model).toBe("gpt-4o");
     });
   });
 });

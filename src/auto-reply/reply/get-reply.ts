@@ -2,6 +2,7 @@ import type { MsgContext } from "../templating.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import {
   resolveAgentDir,
+  resolveAgentModelPrimary,
   resolveAgentWorkspaceDir,
   resolveSessionAgentId,
   resolveAgentSkillsFilter,
@@ -211,7 +212,15 @@ export async function getReplyFromConfig(
     aliasIndex,
   });
 
-  if (routerCfg?.enabled && !hasResolvedHeartbeatModelOverride && !resetModelResult.selection) {
+  // Skip router when the agent has an explicit per-agent model primary so that
+  // the global router tiers don't override the agent's configured provider/model.
+  const agentHasExplicitModel = Boolean(resolveAgentModelPrimary(cfg, agentId));
+  if (
+    routerCfg?.enabled &&
+    !hasResolvedHeartbeatModelOverride &&
+    !resetModelResult.selection &&
+    !agentHasExplicitModel
+  ) {
     const bodyForRouter = finalized.BodyForAgent ?? finalized.Body ?? "";
     const hasMedia = !!(
       finalized.MediaPath ||
